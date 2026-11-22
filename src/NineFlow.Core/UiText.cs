@@ -46,6 +46,7 @@ public static class UiText
         ["status.running"] = "状态：运行中。按 {0} 停止。",
         ["status.runningHint"] = "状态：运行中。按 {0} 停止。提示：{1}",
         ["status.stoppedNext"] = "状态：已停止。按 {0} 开始下一轮（自动续点）。",
+        ["status.stopping"] = "状态：停止超时，按键可能仍在发送。请再按一次 {0}；必要时用任务管理器结束九序。",
         ["status.completed"] = "状态：本轮已完成（次数已发满）。按 {0} 开始下一轮（自动续点）。",
         ["status.error"] = "状态：已停止。{0}",
         ["status.saved"] = "状态：配置已保存到 {0}",

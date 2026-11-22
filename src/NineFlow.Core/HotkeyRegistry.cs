@@ -30,7 +30,11 @@ public sealed class HotkeyRegistry : IDisposable
 
     public bool IsRegistered(int id) => _entries.ContainsKey(id);
 
-    /// <summary>注册（会先注销同 id 的旧热键）。失败时通过 error / win32Error 说明原因。</summary>
+    /// <summary>
+    /// 注册（会先注销同 id 的旧热键）。
+    /// 新热键注册失败时会把旧热键装回去——否则改错一个快捷键，会把原本能用的那个一起丢掉，
+    /// 对连点器来说等于运行中失去“停止”手段。
+    /// </summary>
     public bool TryRegister(
         int id,
         HotkeyDef def,
@@ -41,6 +45,7 @@ public sealed class HotkeyRegistry : IDisposable
         error = HotkeyRegistrationError.None;
         win32Error = 0;
 
+        _entries.TryGetValue(id, out Entry? previous);
         Unregister(id);
 
         if (!NativeMethods.RegisterHotKey(
@@ -53,11 +58,32 @@ public sealed class HotkeyRegistry : IDisposable
             error = win32Error == NativeMethods.ERROR_HOTKEY_ALREADY_REGISTERED
                 ? HotkeyRegistrationError.AlreadyInUse
                 : HotkeyRegistrationError.Failed;
+
+            Restore(id, previous, ref error);
             return false;
         }
 
         _entries[id] = new Entry { Def = def, Handler = handler };
         return true;
+    }
+
+    /// <summary>把被替换掉的旧热键装回去；装不回来说明调用方现在什么热键都没有，要单独提示。</summary>
+    private void Restore(int id, Entry? previous, ref HotkeyRegistrationError error)
+    {
+        if (previous == null) return;
+
+        if (NativeMethods.RegisterHotKey(
+                _hwnd,
+                id,
+                previous.Def.Modifiers | NativeMethods.MOD_NOREPEAT,
+                previous.Def.VirtualKey))
+        {
+            _entries[id] = previous;
+            return;
+        }
+
+        // 连旧的都装不回去了：状态比“注册失败”更糟，交给调用方去报告
+        error = HotkeyRegistrationError.Failed;
     }
 
     public void Unregister(int id)

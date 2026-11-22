@@ -82,6 +82,10 @@ public sealed class MainForm : Form
 
     private int _statusQueued;
     private int _lastSkip;
+
+    /// <summary>已经处理过停止回调的那一轮编号；防止同一轮被 StopClicking 和 Stopped 处理两次。</summary>
+    private int _handledStopRun;
+
     private bool _closing;
     private bool _exiting;
     private bool _balloonShown;
@@ -604,7 +608,7 @@ public sealed class MainForm : Form
         _targetTimer = null;
 
         EngineStopResult? result = _engine.Stop();
-        PersistProgress(result?.Slots ?? _settings.Slots, reportError: false);
+        PersistProgress(result?.Slots ?? _settings.Slots);
         SaveOptionsQuietly();
 
         _hotkeys?.Dispose();
@@ -623,7 +627,7 @@ public sealed class MainForm : Form
     {
         _exiting = true;
         if (_engine.IsRunning) _engine.Stop();
-        PersistProgress(_settings.Slots, reportError: false);
+        PersistProgress(_settings.Slots);
         Close();
     }
 
@@ -817,7 +821,7 @@ public sealed class MainForm : Form
         int skipCount;
         if (skipCountText.Length == 0)
         {
-            skipCount = ClickSession.MaxDone(slots);
+            skipCount = ClickSession.AutoSkipCount(slots);
         }
         else if (int.TryParse(skipCountText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedSkip))
         {
@@ -870,21 +874,32 @@ public sealed class MainForm : Form
         bool wasRunning = _engine.IsRunning;
         EngineStopResult? result = _engine.Stop();
 
+        // 引擎没能在 3 秒内退出：按键还在发，绝不能把界面切成“已停止”
+        if (wasRunning && result == null)
+        {
+            SetStatus("status.stopping", Theme.Orange, HotkeyOffText);
+            UpdateTrayTexts();
+            return;
+        }
+
         SetRunningState(false);
 
-        if (!wasRunning && result == null)
+        if (result == null)
         {
             SetIdleStatus(Theme.TextPrimary);
             return;
         }
 
-        IReadOnlyList<SlotState> slots = result?.Slots ?? _engine.Snapshot();
-        PersistProgress(slots, reportError: true);
-        RenderProgress(slots);
+        // 本轮自然结束时 Stopped 回调可能已经先处理过了，这里不重复播提示音 / 重复改状态
+        if (result.RunId <= _handledStopRun) return;
+        _handledStopRun = result.RunId;
+
+        string? saveError = PersistProgress(result.Slots);
+        RenderProgress(result.Slots);
         RefreshSummary();
         PlayStopSound();
 
-        if (result?.Reason == StopReason.Completed)
+        if (result.Reason == StopReason.Completed)
         {
             SetStatus("status.completed", Theme.Green, HotkeyOnText);
         }
@@ -892,6 +907,9 @@ public sealed class MainForm : Form
         {
             SetStatus("status.stoppedNext", Theme.TextPrimary, HotkeyOnText);
         }
+
+        // 进度没写进磁盘比“已停止”更要紧，放在最后，免得被上面的状态覆盖
+        if (saveError != null) SetStatus("status.progressSaveFailed", Theme.Red, saveError);
 
         UpdateTrayTexts();
     }
@@ -903,7 +921,7 @@ public sealed class MainForm : Form
         if (_engine.IsRunning)
         {
             EngineStopResult? stopResult = _engine.Stop();
-            if (stopResult != null) PersistProgress(stopResult.Slots, reportError: false);
+            if (stopResult != null) PersistProgress(stopResult.Slots);
 
             // 把已经排队但还没执行的“本轮完成 / 出错”回调先处理掉
             Application.DoEvents();
@@ -918,10 +936,11 @@ public sealed class MainForm : Form
         _lastSkip = 0;
         _skipCountField.Value = string.Empty;
 
-        PersistProgress(_settings.Slots, reportError: true);
+        string? saveError = PersistProgress(_settings.Slots);
         RenderProgress(_settings.Slots);
         SetRunningState(false);
         SetStatus("status.reset", Theme.Green, Array.Empty<object>());
+        if (saveError != null) SetStatus("status.progressSaveFailed", Theme.Red, saveError);
         RefreshSummary();
         UpdateAutoSkipLabel();
     }
@@ -1011,9 +1030,11 @@ public sealed class MainForm : Form
     {
         if (_closing) return;
         if (result.Reason == StopReason.User) return; // 主动停止已在 StopClicking 里同步处理
+        if (result.RunId <= _handledStopRun) return;  // 这一轮已经由 StopClicking 处理过了
+        _handledStopRun = result.RunId;
 
         SetRunningState(false);
-        PersistProgress(result.Slots, reportError: false);
+        PersistProgress(result.Slots);
         RenderProgress(result.Slots);
         RefreshSummary();
         UpdateAutoSkipLabel();
@@ -1169,7 +1190,7 @@ public sealed class MainForm : Form
         string manualSkip = _skipCountField.Value.Trim();
         if (manualSkip.Length == 0)
         {
-            skipText = UiText.T("summary.skipAuto", ClickSession.MaxDone(slots));
+            skipText = UiText.T("summary.skipAuto", ClickSession.AutoSkipCount(slots));
         }
         else
         {
@@ -1269,10 +1290,11 @@ public sealed class MainForm : Form
         string manual = _skipCountField.Value.Trim();
         _lblSkipAuto.Text = manual.Length > 0
             ? UiText.T("skip.manual", manual)
-            : UiText.T("skip.auto", ClickSession.MaxDone(ReadSlotsFromUi()));
+            : UiText.T("skip.auto", ClickSession.AutoSkipCount(ReadSlotsFromUi()));
     }
 
-    private void PersistProgress(IReadOnlyList<SlotState> slots, bool reportError)
+    /// <summary>把本轮进度并入设置并写入磁盘。返回保存失败的说明；成功时返回 null。</summary>
+    private string? PersistProgress(IReadOnlyList<SlotState> slots)
     {
         foreach (SlotState runtime in slots)
         {
@@ -1285,10 +1307,9 @@ public sealed class MainForm : Form
             }
         }
 
-        if (!_store.SaveProgress(_settings.Slots, _lastSkip, _skipKeyField.Value.Trim(), out string error))
-        {
-            if (reportError) SetStatus("status.progressSaveFailed", Theme.Red, error);
-        }
+        if (_store.SaveProgress(_settings.Slots, _lastSkip, _skipKeyField.Value.Trim(), out string error)) return null;
+
+        return error;
     }
 
     // ---------------------------------------------------------------- 提示

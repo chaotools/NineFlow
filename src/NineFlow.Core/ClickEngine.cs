@@ -14,7 +14,8 @@ public enum StopReason
     Error,
 }
 
-public sealed record EngineStopResult(StopReason Reason, string? Message, IReadOnlyList<SlotState> Slots);
+/// <param name="RunId">产生该结果的那一轮编号；界面用它去重，避免同一轮被处理两次。</param>
+public sealed record EngineStopResult(StopReason Reason, string? Message, IReadOnlyList<SlotState> Slots, int RunId = 0);
 
 /// <summary>
 /// 连点引擎：后台线程按每个槽位各自的间隔发送按键。
@@ -41,6 +42,12 @@ public sealed class ClickEngine : IDisposable
     private Thread? _thread;
     private volatile bool _running;
     private volatile bool _stopRequested;
+
+    /// <summary>本轮自然结束时留下的结果（完成 / 出错）；用户主动停止不会写这里。</summary>
+    private EngineStopResult? _terminalResult;
+
+    /// <summary>轮次编号，每 Start 一次 +1。</summary>
+    private int _runId;
 
     public ClickEngine(IKeySender sender, int warmupMs = 80, int skipDelayMs = 8)
     {
@@ -116,9 +123,11 @@ public sealed class ClickEngine : IDisposable
             _skipTokens = skipTokens;
             _skipCount = effectiveSkip;
             _stopRequested = false;
+            _terminalResult = null;
+            int runId = ++_runId;
             _running = true;
 
-            var thread = new Thread(RunLoop)
+            var thread = new Thread(() => RunLoop(runId))
             {
                 IsBackground = true,
                 Name = "NineFlow.ClickEngine",
@@ -130,7 +139,11 @@ public sealed class ClickEngine : IDisposable
         }
     }
 
-    /// <summary>请求停止并等待后台线程退出（最多 3 秒）。返回最终快照。</summary>
+    /// <summary>
+    /// 请求停止并等待后台线程退出（最多 3 秒）。
+    /// 返回本轮的真实结果：自然结束（完成 / 出错）就返回那个结果，主动打断才是 <see cref="StopReason.User"/>。
+    /// 返回 null 表示**没能停下来**——线程仍在运行，调用方必须保持“运行中”状态，不能当成已停止。
+    /// </summary>
     public EngineStopResult? Stop()
     {
         Thread? thread = _thread;
@@ -148,10 +161,17 @@ public sealed class ClickEngine : IDisposable
             joined = false;
         }
 
-        _running = false;
+        // 线程还没退出就清 _running，会让界面以为已经停了，而按键其实还在发；
+        // 更糟的是 Start 的防重入检查会失效，可能真的并发起两轮。
         if (!joined) return null;
 
-        return _session == null ? null : new EngineStopResult(StopReason.User, null, _session.Snapshot());
+        _running = false;
+
+        // 本轮已经自己结束了（发满次数 / 发送失败）：如实回报，而不是硬说成用户停止
+        EngineStopResult? terminal = _terminalResult;
+        if (terminal != null) return terminal;
+
+        return _session == null ? null : new EngineStopResult(StopReason.User, null, _session.Snapshot(), _runId);
     }
 
     /// <summary>当前（或上一轮）槽位快照。</summary>
@@ -163,7 +183,7 @@ public sealed class ClickEngine : IDisposable
         _thread = null;
     }
 
-    private void RunLoop()
+    private void RunLoop(int runId)
     {
         ClickSession session = _session!;
         List<SendToken>[] tokens = _tokens!;
@@ -177,7 +197,7 @@ public sealed class ClickEngine : IDisposable
                 if (_warmupMs > 0) Thread.Sleep(_warmupMs);
                 if (_stopRequested)
                 {
-                    Finish(null);
+                    Finish(runId, null);
                     return;
                 }
 
@@ -196,7 +216,7 @@ public sealed class ClickEngine : IDisposable
                     if (PrepareSettleMs > 0) Thread.Sleep(PrepareSettleMs);
                     if (_stopRequested)
                     {
-                        Finish(null);
+                        Finish(runId, null);
                         return;
                     }
                 }
@@ -208,7 +228,7 @@ public sealed class ClickEngine : IDisposable
                     {
                         if (_stopRequested)
                         {
-                            Finish(null);
+                            Finish(runId, null);
                             return;
                         }
 
@@ -219,7 +239,7 @@ public sealed class ClickEngine : IDisposable
 
                     if (_stopRequested)
                     {
-                        Finish(null);
+                        Finish(runId, null);
                         return;
                     }
                 }
@@ -252,12 +272,12 @@ public sealed class ClickEngine : IDisposable
 
                     if (session.AllRunsFinished)
                     {
-                        Finish(new EngineStopResult(StopReason.Completed, null, session.Snapshot()));
+                        Finish(runId, new EngineStopResult(StopReason.Completed, null, session.Snapshot()));
                         return;
                     }
                 }
 
-                Finish(null);
+                Finish(runId, null);
             }
             finally
             {
@@ -266,16 +286,28 @@ public sealed class ClickEngine : IDisposable
         }
         catch (KeySendException ex)
         {
-            Finish(new EngineStopResult(StopReason.Error, ex.Message, session.Snapshot()));
+            Finish(runId, new EngineStopResult(StopReason.Error, ex.Message, session.Snapshot()));
         }
         catch (Exception ex)
         {
-            Finish(new EngineStopResult(StopReason.Error, "连点异常：" + ex.Message, session.Snapshot()));
+            Finish(runId, new EngineStopResult(StopReason.Error, "连点异常：" + ex.Message, session.Snapshot()));
         }
     }
 
-    private void Finish(EngineStopResult? result)
+    private void Finish(int runId, EngineStopResult? result)
     {
+        // 先把终止结果登记下来，Stop() 才能在 Join 之后读到它——否则界面永远只会看到 User
+        if (result != null)
+        {
+            EngineStopResult terminal = result with { RunId = runId };
+            result = terminal;
+
+            lock (_gate)
+            {
+                if (_runId == runId) _terminalResult = terminal;
+            }
+        }
+
         _running = false;
 
         if (result == null) return;

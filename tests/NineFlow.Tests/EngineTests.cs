@@ -147,6 +147,17 @@ internal static class ClickSessionTests
         };
         Program.Equal("MaxDone 取最大值", 12, ClickSession.MaxDone(doneSlots));
 
+        // 6b) 自动续点只统计会真正执行的行：已停用的行不能把跳过数撑大
+        var mixedDone = new List<SlotState>
+        {
+            new() { Index = 1, Enabled = true, Key = "Down", Done = 3 },
+            new() { Index = 2, Enabled = true, Key = "Enter", Done = 5 },
+            new() { Index = 3, Enabled = false, Key = "2", Done = 40 },
+        };
+        Program.Equal("MaxDone 仍取全部行的最大值", 40, ClickSession.MaxDone(mixedDone));
+        Program.Equal("自动跳过只统计启用的行", 5, ClickSession.AutoSkipCount(mixedDone));
+        Program.Equal("全部行都停用时自动跳过为 0", 0, ClickSession.AutoSkipCount(disabled));
+
         // 7) 快照与时间推进：落后时不会爆发补发
         var burst = new List<SlotState>
         {
@@ -189,6 +200,16 @@ internal static class ClickEngineTests
             Program.Equal("完成后不再运行", false, engine.IsRunning);
             Program.Equal("完成结果中第 1 行累计", 2, result.Slots[0].Done);
             Program.Equal("完成结果中第 2 行累计", 2, result.Slots[1].Done);
+
+            // 回归：本轮已经自然结束时再调 Stop，结果不能被伪装成“用户停止”，
+            // 否则界面永远走不到“本轮已完成”的提示。
+            EngineStopResult? afterComplete = engine.Stop();
+            Program.Check(
+                "完成后调用 Stop 仍报告本轮完成",
+                afterComplete != null && afterComplete.Reason == StopReason.Completed,
+                afterComplete == null ? "null" : afterComplete.Reason.ToString());
+            Program.Equal("完成后 Stop 带上同一个轮次编号", result.RunId, afterComplete!.RunId);
+            Program.Check("轮次编号有效", result.RunId > 0, "RunId=" + result.RunId);
         }
 
         // 2) 发送失败 → 以错误停止

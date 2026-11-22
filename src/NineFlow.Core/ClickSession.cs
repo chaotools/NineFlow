@@ -128,4 +128,10 @@ public sealed class ClickSession
 
         return max;
     }
+
+    /// <summary>
+    /// 自动续点要跳过的项数：只统计真正会执行的行（勾选且有按键）。
+    /// 已停用的行带着历史进度一起参与取最大值，会把跳过数撑大，从而多跳过还没处理的项目。
+    /// </summary>
+    public static int AutoSkipCount(IEnumerable<SlotState> slots) => MaxDone(slots.Where(slot => slot.IsActive));
 }
