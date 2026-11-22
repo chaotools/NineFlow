@@ -57,25 +57,6 @@ jobs:
           Copy-Item 'assets/screenshot.png' 'NineFlow-Preview.png'
           Get-ChildItem "NineFlow-$tag.exe", 'NineFlow-UserGuide-zh.md', 'NineFlow-Preview.png' | Select-Object Name, Length
 
-      - name: 更新 README 徽章版本号
-        shell: pwsh
-        run: |
-          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.tag }}') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
-          $tag = $tag.Trim()
-          $text = Get-Content 'README.md' -Raw
-          $text = $text -replace 'release-v[0-9]+\.[0-9]+\.[0-9]+', "release-$tag"
-          Set-Content 'README.md' -Value $text -NoNewline -Encoding utf8
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add README.md
-          git diff --cached --quiet
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host 'README 徽章已是当前版本，跳过提交'
-          } else {
-            git commit -m "docs: README 徽章更新到 $tag"
-            git push origin HEAD:main
-          }
-
       - name: 创建 GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
