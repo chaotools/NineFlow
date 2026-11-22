@@ -30,6 +30,10 @@ Windows 桌面「多键连发 · 智能续点」工具，免安装、双击即�
 - **提示音 / 窗口置顶**：开始停止有声音反馈；可让窗口常在最前。
 - 默认配置：`Down` / `Enter` 各 9 次、间隔 0.02 秒。
 
+## 截图
+
+![界面预览](assets/screenshot.png)
+
 ---
 
 ## 2. 直接使用（exe）
@@ -147,6 +151,7 @@ dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll
   - F7/F8 开始停止与进度保存
   - 关闭到托盘关闭时正常退出并保存进度
 - **`tools\verify-delivery.ps1`**：交付目录自检（启动、自建 ini、工作目录无关性、单实例）。
+- **CI**：推送到 `main` 时 GitHub Actions 在 Windows 上编译并运行 221 项逻辑测试（跳过需要真实桌面的 18 项集成测试），产物可在 Actions 页面下载。
 
 ---
 
@@ -213,3 +218,12 @@ SkipKey=Down
 - 只做「发送按键」，不做图像识别 / 窗口定位，需要用户先把目标窗口切到前台。
 - 定时精度受系统调度影响；0.02 秒配置下实测频率符合预期。
 - 未做代码签名，首次运行可能出现 SmartScreen 提示。
+
+---
+
+## 相关文档
+
+- [更新日志](CHANGELOG.md)
+- [参与贡献](CONTRIBUTING.md)
+- [安全说明](SECURITY.md)
+- [使用说明](使用说明.md)

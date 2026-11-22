@@ -1,0 +1,91 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布已有的标签（例如 v1.1.4）'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: 校验版本号与标签一致
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.tag }}') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
+          $tag = $tag.Trim()
+          $version = $tag.TrimStart('v')
+          [xml]$project = Get-Content 'src/NineFlow/NineFlow.csproj'
+          $declared = @($project.Project.PropertyGroup.Version | Where-Object { $_ }) | Select-Object -First 1
+          if ($declared -ne $version) {
+            throw "csproj 版本 $declared 与标签 $tag 不一致，请先更新版本号再打标签"
+          }
+          Write-Host "版本校验通过：$version"
+
+      - name: 编译
+        run: dotnet build tests/NineFlow.Tests/NineFlow.Tests.csproj -c Release
+
+      - name: 运行逻辑测试
+        run: dotnet tests/NineFlow.Tests/bin/Release/net8.0-windows/NineFlow.Tests.dll --skip-integration
+
+      - name: 发布单文件 exe
+        run: dotnet publish src/NineFlow/NineFlow.csproj -c Release -o publish
+
+      - name: 准备发布资产
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.tag }}') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
+          $tag = $tag.Trim()
+          Copy-Item 'publish/NineFlow.exe' "NineFlow-$tag.exe"
+          Copy-Item '使用说明.md' 'NineFlow-UserGuide-zh.md'
+          Copy-Item 'assets/screenshot.png' 'NineFlow-Preview.png'
+          Get-ChildItem "NineFlow-$tag.exe", 'NineFlow-UserGuide-zh.md', 'NineFlow-Preview.png' | Select-Object Name, Length
+
+      - name: 更新 README 徽章版本号
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.tag }}') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
+          $tag = $tag.Trim()
+          $text = Get-Content 'README.md' -Raw
+          $text = $text -replace 'release-v[0-9]+\.[0-9]+\.[0-9]+', "release-$tag"
+          Set-Content 'README.md' -Value $text -NoNewline -Encoding utf8
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host 'README 徽章已是当前版本，跳过提交'
+          } else {
+            git commit -m "docs: README 徽章更新到 $tag"
+            git push origin HEAD:main
+          }
+
+      - name: 创建 GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.tag }}') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
+          $tag = $tag.Trim()
+          $existing = gh release view $tag --json url 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag 已存在，跳过创建"
+          } else {
+            gh release create $tag "NineFlow-$tag.exe" 'NineFlow-UserGuide-zh.md' 'NineFlow-Preview.png' --title "九序 / NineFlow $tag" --generate-notes
+          }

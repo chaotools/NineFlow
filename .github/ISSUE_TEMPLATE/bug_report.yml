@@ -1,0 +1,55 @@
+name: 问题反馈
+description: 报告一个可复现的问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量把「做了什么 → 期望什么 → 实际什么」写清楚，便于定位。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么？
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开九序
+        2. 勾选第 1 行，按键填 Down，间隔 0.02，次数 9
+        3. 按 F7
+        4. ……
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 例如 1.1.4（右键 exe → 属性 → 详细信息 → 文件版本）
+      placeholder: "1.1.4"
+    validations:
+      required: true
+
+  - type: input
+    id: system
+    attributes:
+      label: 系统
+      description: 例如 Windows 10 22H2 x64 / Windows 11 24H2 x64
+      placeholder: "Windows 10 22H2 x64"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 截图 / 日志（可选）
+      description: 可直接把截图拖进来；异常日志在 %TEMP%\NineFlow-error.log
+    validations:
+      required: false

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用说明
+    url: https://github.com/chaotools/NineFlow/blob/main/%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E.md
+    about: 先看一下使用说明，常见问题里面基本都有答案
+  - name: 更新日志
+    url: https://github.com/chaotools/NineFlow/blob/main/CHANGELOG.md
+    about: 看看新版本改了什么、修了什么

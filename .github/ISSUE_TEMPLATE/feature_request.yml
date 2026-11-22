@@ -1,0 +1,31 @@
+name: 功能建议
+description: 提出新功能或改进建议
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 想解决的问题
+      description: 现在哪里不方便？希望改善什么？
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 期望的做法
+      description: 你希望它怎么工作？
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 其它方案（可选）
+      description: 有没有考虑过别的做法？
+
+  - type: markdown
+    attributes:
+      value: |
+        提示：九序的定位是「发送按键 + 智能续点」，不包含图像识别、窗口定位等功能。
