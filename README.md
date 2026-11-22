@@ -1,5 +1,10 @@
 # 九序 / NineFlow
 
+[![build](https://github.com/chaotools/NineFlow/actions/workflows/build.yml/badge.svg)](https://github.com/chaotools/NineFlow/actions/workflows/build.yml)
+[![release](https://img.shields.io/github/v/release/chaotools/NineFlow?sort=semver)](https://github.com/chaotools/NineFlow/releases/latest)
+[![license](https://img.shields.io/github/license/chaotools/NineFlow)](LICENSE)
+[![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6)](#1-功能)
+
 Windows 桌面「多键连发 · 智能续点」工具，免安装、双击即用，**关闭窗口后可在托盘后台常驻**。
 
 - 中文名：**九序**

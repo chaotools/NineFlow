@@ -11,10 +11,14 @@ internal static class Program
     private static readonly List<string> Failures = new();
 
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
         Console.WriteLine("== 九序 NineFlow 核心逻辑测试 ==");
+
+        // CI 环境没有真实桌面/前台窗口，可跳过需要真实按键投递的集成测试
+        bool skipIntegration = args.Any(arg =>
+            string.Equals(arg, "--skip-integration", StringComparison.OrdinalIgnoreCase));
 
         RunGroup("IniDocument", IniDocumentTests.Run);
         RunGroup("SettingsStore", SettingsStoreTests.Run);
@@ -25,7 +29,17 @@ internal static class Program
         RunGroup("AppSettingsOptions", AppSettingsOptionsTests.Run);
         RunGroup("ClickSession", ClickSessionTests.Run);
         RunGroup("ClickEngine", ClickEngineTests.Run);
-        RunGroup("Integration", IntegrationTests.Run);
+
+        if (skipIntegration)
+        {
+            Console.WriteLine();
+            Console.WriteLine("-- Integration --");
+            Console.WriteLine("  (已跳过：需要真实桌面与按键投递)");
+        }
+        else
+        {
+            RunGroup("Integration", IntegrationTests.Run);
+        }
 
         Console.WriteLine();
         Console.WriteLine($"通过 {_passed} 项，失败 {Failures.Count} 项。");

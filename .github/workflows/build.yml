@@ -1,0 +1,41 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: 还原依赖
+        run: dotnet restore tests/NineFlow.Tests/NineFlow.Tests.csproj
+
+      - name: 编译
+        run: dotnet build tests/NineFlow.Tests/NineFlow.Tests.csproj -c Release --no-restore
+
+      - name: 运行逻辑测试
+        run: dotnet tests/NineFlow.Tests/bin/Release/net8.0-windows/NineFlow.Tests.dll --skip-integration
+
+      - name: 发布单文件 exe
+        run: dotnet publish src/NineFlow/NineFlow.csproj -c Release -o publish
+
+      - name: 上传 exe 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: NineFlow-exe
+          path: publish/NineFlow.exe
+          if-no-files-found: error
