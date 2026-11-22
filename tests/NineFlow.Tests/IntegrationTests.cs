@@ -103,7 +103,23 @@ internal static class IntegrationTests
             // 注销后可以重新注册
             bool again = registry.TryRegister(9001, definition, () => fired++, out HotkeyRegistrationError againError, out _);
             Program.Check("注销后可以重新注册", again, againError.ToString());
+
+            // 回归：用同一个 id 改注册一个已被占用的热键，失败后原来那个热键必须还在，
+            // 否则改错一次快捷键就会让连点器失去“停止”手段。
+            Program.Check("准备：解析 F14", HotkeyDef.TryParse("F14", out HotkeyDef? other, out string otherError), otherError);
+            bool occupied = registry.TryRegister(9003, other!, () => { }, out HotkeyRegistrationError occupiedError, out _);
+            Program.Check("先占用 F14", occupied, occupiedError.ToString());
+
+            bool replaced = registry.TryRegister(9001, other!, () => fired++, out HotkeyRegistrationError replaceError, out _);
+            Program.Check("换注册为已被占用的热键被拒绝", !replaced);
+            Program.Equal("换注册失败原因是已被占用", HotkeyRegistrationError.AlreadyInUse, replaceError);
+
+            PostMessage(form.Handle, WM_HOTKEY, 9001, IntPtr.Zero);
+            Application.DoEvents();
+            Program.Equal("换注册失败后旧热键仍然可用", 2, fired);
+
             registry.Unregister(9001);
+            registry.Unregister(9003);
         }
 
         form.Close();
