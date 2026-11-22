@@ -12,6 +12,15 @@
 - 修改快捷键失败（被占用 / 写错）会连带注销原本能用的热键，可能让运行中的连点失去停止手段
 - 自动续点把已停用行的历史进度也计入，会把跳过数撑大、多跳过还没处理的项目
 - 进度保存失败的提示被紧随其后的状态文案覆盖，用户看不到
+- 快捷键可以填成没有修饰键的普通按键（如 `Down`、`a`、`2`），注册成全局热键后会把该键从系统中整个吞掉；现在只允许 F1–F24，其它按键必须带 Ctrl / Alt / Shift / Win
+- 鼠标动作（如 `^LButton`）发送时丢弃修饰键，Ctrl+单击实际变成了普通单击
+- 「重置进度」里残留的 `Application.DoEvents()` 会把排队的停止回调重入派发进来；该分支实际不可达，改为明确拒绝
+
+### 变更
+
+- 移除未使用的代码：`IClock` / `StopwatchClock`、`AppSettings.LastSkip`（连带 `Progress/LastSkip` 与 `SettingsStore.SaveProgress` 的 `lastSkip` 参数）、`IniDocument.GetInt/GetDouble/GetBool`、`Theme.DrawCard` / `DrawShadow`、`AppTextField.ReadOnlyField`、`KeyField.RefreshPlaceholder`、`HotkeyRegistry.IsRegistered`、`TimePeriod.ResetForTests`
+- 配置里不再写入重复的 `Progress/SkipKey`（与 `Skip/Key` 内容相同，且从未被读取）
+- 校正 README 中的测试数量
 
 ## [1.1.4] - 2026-11-22
 

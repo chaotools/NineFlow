@@ -114,9 +114,21 @@ public sealed class HotkeyDef
 
         if (!TryResolveKey(keyPart, ref mods, out uint vk, out error)) return false;
 
+        // 注册成全局热键后，没有修饰键的普通按键会被系统整个吞掉。
+        // 万一填成 Down / a / 2，全系统的这个键就失灵了，所以只放行 F1–F24。
+        if (mods == 0 && !IsFunctionKey(vk))
+        {
+            error = $"“{KeyNames.GetDisplayName((ushort)vk)}”单独做全局热键会吞掉系统中的这个按键，"
+                + "请改用 F1–F24，或加一个修饰键（Ctrl / Alt / Shift / Win）";
+            return false;
+        }
+
         def = new HotkeyDef(mods, vk, Format(mods, vk));
         return true;
     }
+
+    /// <summary>是否 F1–F24（虚拟键码 0x70–0x87）。</summary>
+    private static bool IsFunctionKey(uint vk) => vk >= 0x70 && vk <= 0x87;
 
     private static bool TryResolveKey(string keyPart, ref uint mods, out uint vk, out string error)
     {

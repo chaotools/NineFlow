@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace NineFlow.Core;
 
 /// <summary>
@@ -33,21 +31,4 @@ public static class TimePeriod
             }
         }
     }
-
-    internal static void ResetForTests()
-    {
-        lock (Gate) _count = 0;
-    }
-}
-
-/// <summary>单调递增的毫秒时钟（测试可替换）。</summary>
-public interface IClock
-{
-    long ElapsedMilliseconds { get; }
-}
-
-public sealed class StopwatchClock : IClock
-{
-    private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
-    public long ElapsedMilliseconds => _stopwatch.ElapsedMilliseconds;
 }

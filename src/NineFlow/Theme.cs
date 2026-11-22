@@ -119,39 +119,4 @@ internal static class Theme
 
         target.DrawImageUnscaled(bitmap, 0, 0);
     }
-
-    /// <summary>卡片阴影：几层低透明度圆角矩形叠加，模拟 macOS 的柔和投影。</summary>
-    public static void DrawShadow(Graphics graphics, Rectangle bounds, int radius, int spread = 5)
-    {
-        SmoothingMode previous = graphics.SmoothingMode;
-        graphics.SmoothingMode = SmoothingMode.AntiAlias;
-
-        for (int layer = spread; layer >= 1; layer--)
-        {
-            var shadowRect = new Rectangle(
-                bounds.X - layer,
-                bounds.Y - layer + 2,
-                bounds.Width + layer * 2,
-                bounds.Height + layer * 2);
-
-            using GraphicsPath path = RoundedRect(shadowRect, radius + layer);
-            using var brush = new SolidBrush(Color.FromArgb(7, 0, 0, 0));
-            graphics.FillPath(brush, path);
-        }
-
-        graphics.SmoothingMode = previous;
-    }
-
-    /// <summary>带阴影的白色圆角卡片。</summary>
-    public static void DrawCard(Graphics graphics, Rectangle bounds, int radius = 14)
-    {
-        DrawShadow(graphics, bounds, radius);
-
-        using (GraphicsPath path = RoundedRect(bounds, radius))
-        {
-            using (var fill = new SolidBrush(Card)) graphics.FillPath(fill, path);
-            using var border = new Pen(CardBorder);
-            graphics.DrawPath(border, path);
-        }
-    }
 }

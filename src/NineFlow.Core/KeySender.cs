@@ -53,7 +53,10 @@ public sealed class KeySender : IKeySender
     {
         if (token.Kind == StrokeKind.Mouse)
         {
+            // 鼠标动作同样要带上修饰键，否则 ^LButton（Ctrl+单击）里的 Ctrl 会被静默丢掉
+            PressModifiers(inputs, token.Modifiers);
             AddMouse(token, inputs);
+            ReleaseModifiers(inputs, token.Modifiers);
             return;
         }
 

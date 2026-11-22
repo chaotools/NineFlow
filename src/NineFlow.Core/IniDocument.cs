@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 
 namespace NineFlow.Core;
@@ -44,32 +43,6 @@ public sealed class IniDocument
 
     public string? Get(string section, string key) =>
         _byName.TryGetValue(section, out IniSection? found) ? found.Get(key) : null;
-
-    public int GetInt(string section, string key, int fallback)
-    {
-        string? text = Get(section, key);
-        return int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : fallback;
-    }
-
-    public double GetDouble(string section, string key, double fallback)
-    {
-        string? text = Get(section, key);
-        if (string.IsNullOrWhiteSpace(text)) return fallback;
-        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)) return value;
-        if (double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value)) return value;
-        return fallback;
-    }
-
-    public bool GetBool(string section, string key, bool fallback)
-    {
-        string? text = Get(section, key);
-        if (text == null) return fallback;
-        text = text.Trim();
-        return text.Equals("1", StringComparison.OrdinalIgnoreCase)
-            || text.Equals("true", StringComparison.OrdinalIgnoreCase)
-            || text.Equals("yes", StringComparison.OrdinalIgnoreCase)
-            || text.Equals("on", StringComparison.OrdinalIgnoreCase);
-    }
 
     public void Set(string section, string key, string value) => GetOrAddSection(section).Set(key, value);
 

@@ -16,10 +16,6 @@ public sealed class AppSettings
     /// <summary>跳过数，空 = 自动取累计次数。</summary>
     public string SkipCount { get; set; } = string.Empty;
 
-    /// <summary>上一次实际跳过的项数（仅记录，不入界面）。</summary>
-    public int LastSkip { get; set; }
-
-
     /// <summary>点关闭按钮时隐藏到托盘而不是退出。</summary>
     public bool CloseToTray { get; set; } = true;
 
@@ -109,13 +105,6 @@ public sealed class SettingsStore
         settings.Beep = document.GetBoolOrNull("General", "Beep") ?? true;
         settings.TopMost = document.GetBoolOrNull("General", "TopMost") ?? false;
 
-        string? lastSkip = document.Get("Progress", "LastSkip");
-        if (!string.IsNullOrWhiteSpace(lastSkip) &&
-            int.TryParse(lastSkip, NumberStyles.Integer, CultureInfo.InvariantCulture, out int lastSkipValue))
-        {
-            settings.LastSkip = Math.Max(0, lastSkipValue);
-        }
-
         return settings;
     }
 
@@ -144,8 +133,6 @@ public sealed class SettingsStore
             document.Set("Hotkey", "Off", settings.HotkeyOff ?? string.Empty);
             document.Set("Skip", "Key", settings.SkipKey ?? string.Empty);
             document.Set("Skip", "Count", settings.SkipCount ?? string.Empty);
-            document.Set("Progress", "LastSkip", settings.LastSkip.ToString(CultureInfo.InvariantCulture));
-            document.Set("Progress", "SkipKey", settings.SkipKey ?? string.Empty);
 
             WriteGeneral(document, settings);
 
@@ -185,8 +172,8 @@ public sealed class SettingsStore
         document.Set("General", "TopMost", settings.TopMost ? "1" : "0");
     }
 
-    /// <summary>保存累计进度（只写 Done 与 Progress 节）。</summary>
-    public bool SaveProgress(IReadOnlyList<SlotState> slots, int lastSkip, string skipKey, out string error)
+    /// <summary>保存累计进度（只写各行的 Done，不碰其它配置）。</summary>
+    public bool SaveProgress(IReadOnlyList<SlotState> slots, out string error)
     {
         try
         {
@@ -197,9 +184,6 @@ public sealed class SettingsStore
                 string section = "Slot" + slot.Index.ToString(CultureInfo.InvariantCulture);
                 document.Set(section, "Done", Math.Max(0, slot.Done).ToString(CultureInfo.InvariantCulture));
             }
-
-            document.Set("Progress", "LastSkip", Math.Max(0, lastSkip).ToString(CultureInfo.InvariantCulture));
-            document.Set("Progress", "SkipKey", skipKey ?? string.Empty);
 
             document.Save(Path);
             error = string.Empty;

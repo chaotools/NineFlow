@@ -101,6 +101,12 @@ internal static class SendSpecTests
         Program.Equal("LButton 类型", StrokeKind.Mouse, mouse[0].Kind);
         Program.Equal("LButton 动作", MouseStroke.Left, mouse[0].Mouse);
 
+        // 鼠标动作也要保留修饰键，否则发送时 Ctrl 会丢（KeySender 会先按下再释放）
+        Program.Check("^LButton 解析成功", SendSpec.TryParse("^LButton", out List<SendToken> ctrlClick, out _));
+        Program.Equal("^LButton 仍是鼠标动作", StrokeKind.Mouse, ctrlClick[0].Kind);
+        Program.Equal("^LButton 保留 Ctrl", SendSpec.ModControl, ctrlClick[0].Modifiers);
+        Program.Equal("^LButton 描述带修饰键", "Ctrl+Left", SendSpec.Describe(ctrlClick));
+
         // 非法输入
         Program.Check("空字符串无效", !SendSpec.TryParse("", out _, out _));
         Program.Check("仅空白无效", !SendSpec.TryParse("   ", out _, out _));
@@ -152,5 +158,17 @@ internal static class HotkeyDefTests
         Program.Check("只有修饰符无效", !HotkeyDef.TryParse("^", out _, out _));
         Program.Check("未知键无效", !HotkeyDef.TryParse("Ctrl+Qqq", out _, out _));
         Program.Check("鼠标键不能做热键", !HotkeyDef.TryParse("LButton", out _, out _));
+
+        // 没有修饰键的普通按键注册成全局热键后会把该键整个吞掉，只允许 F1–F24
+        Program.Check("裸字母不能做热键", !HotkeyDef.TryParse("a", out _, out _));
+        Program.Check("裸数字不能做热键", !HotkeyDef.TryParse("2", out _, out _));
+
+        bool downAsHotkey = HotkeyDef.TryParse("Down", out _, out string downHotkeyError);
+        Program.Check("裸方向键不能做热键", !downAsHotkey);
+        Program.Check("拒绝时会说明原因并给出做法", downHotkeyError.Contains("修饰键"), downHotkeyError);
+
+        Program.Check("F1 裸键允许", HotkeyDef.TryParse("F1", out _, out _));
+        Program.Check("F24 裸键允许", HotkeyDef.TryParse("F24", out _, out _));
+        Program.Check("方向键加上修饰符就允许", HotkeyDef.TryParse("Ctrl+Down", out _, out _));
     }
 }
