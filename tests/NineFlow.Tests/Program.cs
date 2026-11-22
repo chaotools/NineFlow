@@ -30,6 +30,7 @@ internal static class Program
         RunGroup("ClickSession", ClickSessionTests.Run);
         RunGroup("ClickEngine", ClickEngineTests.Run);
         RunGroup("KeyCapture", KeyCaptureTests.Run);
+        RunGroup("KeyConflict", KeyConflictTests.Run);
 
         if (skipIntegration)
         {

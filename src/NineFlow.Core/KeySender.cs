@@ -65,38 +65,7 @@ public sealed class KeySender : IKeySender
 
     private static void AddKeyboard(SendToken token, List<NativeMethods.INPUT> inputs)
     {
-        uint mods = token.Modifiers;
-        ushort vk;
-        bool extended;
-        char? unicode = null;
-
-        if (token.IsCharacter)
-        {
-            IntPtr layout = NativeMethods.GetKeyboardLayout(0);
-            short scan = NativeMethods.VkKeyScanEx(token.Character, layout);
-
-            if (scan != -1)
-            {
-                vk = (ushort)(scan & 0xFF);
-                byte state = (byte)((scan >> 8) & 0xFF);
-
-                if ((state & 0x01) != 0) mods |= SendSpec.ModShift;
-                if ((state & 0x02) != 0) mods |= SendSpec.ModControl;
-                if ((state & 0x04) != 0) mods |= SendSpec.ModAlt;
-                extended = false;
-            }
-            else
-            {
-                vk = 0;
-                extended = false;
-                unicode = token.Character;
-            }
-        }
-        else
-        {
-            vk = token.VirtualKey;
-            extended = token.Extended;
-        }
+        KeyResolution.Resolve(token, out ushort vk, out bool extended, out uint mods, out char? unicode);
 
         PressModifiers(inputs, mods);
 

@@ -96,6 +96,9 @@ public sealed class MainForm : Form
     private bool _exiting;
     private bool _balloonShown;
 
+    /// <summary>热键注册失败的气泡是否已经弹过（每次运行只弹一次，避免反复骚扰）。</summary>
+    private bool _hotkeyProblemShown;
+
     private readonly int _processId = Environment.ProcessId;
     private IntPtr _targetWindow;
     private string _targetTitle = string.Empty;
@@ -568,7 +571,7 @@ public sealed class MainForm : Form
         base.OnHandleCreated(e);
 
         _hotkeys = new HotkeyRegistry(Handle);
-        RegisterHotkeys(reportErrors: false);
+        ShowHotkeyProblem(RegisterHotkeys(), "status.hotkeyProblem");
         StartShowListener();
     }
 
@@ -762,8 +765,11 @@ public sealed class MainForm : Form
             return;
         }
 
-        RegisterHotkeys(reportErrors: false);
-        SetStatus("status.saved", Theme.Green, _store.Path);
+        // 注册失败必须说出来：否则界面说「已保存」，用户以为热键生效了，其实没有
+        List<string> hotkeyProblems = RegisterHotkeys();
+        if (hotkeyProblems.Count > 0) ShowHotkeyProblem(hotkeyProblems, "status.savedHotkeyProblem");
+        else SetStatus("status.saved", Theme.Green, _store.Path);
+
         RenderProgress(_settings.Slots);
         RefreshSummary();
         UpdateAutoSkipLabel();
@@ -780,11 +786,12 @@ public sealed class MainForm : Form
 
         _settings = _store.Load();
         ApplySettings(_settings);
-        RegisterHotkeys(reportErrors: false);
+        List<string> hotkeyProblems = RegisterHotkeys();
         RenderProgress(_settings.Slots);
         TopMost = _settings.TopMost;
 
-        if (_settings.Notes.Count > 0) SetStatus("note.read", Theme.Orange, UnwrapNote(_settings.Notes[0]));
+        if (hotkeyProblems.Count > 0) ShowHotkeyProblem(hotkeyProblems, "status.loadedHotkeyProblem");
+        else if (_settings.Notes.Count > 0) SetStatus("note.read", Theme.Orange, UnwrapNote(_settings.Notes[0]));
         else SetStatus("status.loaded", Theme.Green, Array.Empty<object>());
     }
 
@@ -797,7 +804,7 @@ public sealed class MainForm : Form
         CancelKeyCapture(restoreValue: true);
 
         // 开始前按当前文本重新注册热键
-        List<string> hotkeyProblems = RegisterHotkeys(reportErrors: false);
+        List<string> hotkeyProblems = RegisterHotkeys();
 
         var errors = new List<string>();
         List<SlotState> slots = ReadSlotsFromUi(errors, validate: true);
@@ -811,23 +818,59 @@ public sealed class MainForm : Form
             return;
         }
 
+        HotkeyDef? startHotkey = ParseHotkey(HotkeyOnText);
+        HotkeyDef? stopHotkey = ParseHotkey(HotkeyOffText);
+
         // 先本地校验按键写法，报错信息才能跟随界面语言
         foreach (SlotState slot in active)
         {
-            if (!SendSpec.TryParse(slot.Key, out _, out string keyError))
+            if (!SendSpec.TryParse(slot.Key, out List<SendToken> tokens, out string keyError))
             {
                 Beep(beepOn: true);
                 SetStatus("status.keyInvalid", Theme.Red, slot.Index, slot.Key, keyError);
                 return;
             }
+
+            // 要发送的键如果和热键相同，这个键会被系统在输入流里先截走，
+            // 目标窗口永远收不到；撞上停止热键还会把正在跑的任务自己停掉。
+            if (stopHotkey != null && KeyConflict.Contains(tokens, stopHotkey))
+            {
+                Beep(beepOn: true);
+                SetStatus("status.blocked", Theme.Red, UiText.T("row.conflictStop", slot.Index, slot.Key, stopHotkey.Display));
+                return;
+            }
+
+            if (startHotkey != null && KeyConflict.Contains(tokens, startHotkey))
+            {
+                Beep(beepOn: true);
+                SetStatus("status.blocked", Theme.Red, UiText.T("row.conflictStart", slot.Index, slot.Key, startHotkey.Display));
+                return;
+            }
         }
 
         string skipKey = _skipKeyField.Value.Trim();
-        if (skipKey.Length > 0 && !SendSpec.TryParse(skipKey, out _, out string skipError))
+        if (skipKey.Length > 0)
         {
-            Beep(beepOn: true);
-            SetStatus("status.skipInvalid", Theme.Red, skipKey, skipError);
-            return;
+            if (!SendSpec.TryParse(skipKey, out List<SendToken> skipTokens, out string skipError))
+            {
+                Beep(beepOn: true);
+                SetStatus("status.skipInvalid", Theme.Red, skipKey, skipError);
+                return;
+            }
+
+            if (stopHotkey != null && KeyConflict.Contains(skipTokens, stopHotkey))
+            {
+                Beep(beepOn: true);
+                SetStatus("status.blocked", Theme.Red, UiText.T("skip.conflictStop", skipKey, stopHotkey.Display));
+                return;
+            }
+
+            if (startHotkey != null && KeyConflict.Contains(skipTokens, startHotkey))
+            {
+                Beep(beepOn: true);
+                SetStatus("status.blocked", Theme.Red, UiText.T("skip.conflictStart", skipKey, startHotkey.Display));
+                return;
+            }
         }
 
         string skipCountText = _skipCountField.Value.Trim();
@@ -957,18 +1000,13 @@ public sealed class MainForm : Form
 
     // ---------------------------------------------------------------- 热键
 
-    private List<string> RegisterHotkeys(bool reportErrors)
+    private List<string> RegisterHotkeys()
     {
         var problems = new List<string>();
         if (_hotkeys == null) return problems;
 
         RegisterHotkey(HotkeyStartId, _hotkeyOnField.Value, UiText.T("label.start"), StartClicking, problems);
         RegisterHotkey(HotkeyStopId, _hotkeyOffField.Value, UiText.T("label.stop"), StopClicking, problems);
-
-        if (problems.Count > 0 && reportErrors)
-        {
-            SetStatus("status.error", Theme.Orange, string.Join("；", problems));
-        }
 
         return problems;
     }
@@ -997,6 +1035,34 @@ public sealed class MainForm : Form
                 ? UiText.T("hotkey.taken", definition!.Display)
                 : UiText.T("hotkey.failed", definition!.Display, win32Error);
             problems.Add(reason);
+        }
+    }
+
+    private static HotkeyDef? ParseHotkey(string text) =>
+        HotkeyDef.TryParse(text, out HotkeyDef? definition, out _) ? definition : null;
+
+    /// <summary>
+    /// 热键没注册上时的提醒。气泡在 Win10/11 可能被「专注助手 / 通知设置」静默丢掉，
+    /// 所以状态栏同时留一条红字——只靠气泡是不够的。
+    /// </summary>
+    private void ShowHotkeyProblem(IReadOnlyList<string> problems, string statusKey)
+    {
+        if (problems.Count == 0) return;
+
+        string summary = string.Join("；", problems);
+        SetStatus(statusKey, Theme.Red, summary);
+
+        // 气泡每次运行只弹一次，免得反复点保存时一直骚扰
+        if (_hotkeyProblemShown) return;
+        _hotkeyProblemShown = true;
+
+        try
+        {
+            _tray?.ShowBalloonTip(6000, UiText.T("hotkey.problemTitle"), summary, ToolTipIcon.Warning);
+        }
+        catch
+        {
+            // 托盘不可用时忽略：状态栏已经写明原因
         }
     }
 
