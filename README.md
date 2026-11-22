@@ -1,7 +1,7 @@
 # 九序 / NineFlow
 
 [![build](https://github.com/chaotools/NineFlow/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/chaotools/NineFlow/actions/workflows/build.yml)
-[![release](https://img.shields.io/badge/release-v1.1.3-blue)](https://github.com/chaotools/NineFlow/releases/latest)
+[![release](https://img.shields.io/badge/release-v1.1.4-blue)](https://github.com/chaotools/NineFlow/releases/latest)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![tests](https://img.shields.io/badge/tests-221%20passed-brightgreen)](#6-测试)
 [![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6)](#1-功能)
