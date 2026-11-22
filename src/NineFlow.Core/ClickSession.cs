@@ -1,0 +1,131 @@
+namespace NineFlow.Core;
+
+/// <summary>
+/// 连点调度的纯逻辑部分：不含线程与真实时钟，便于单元测试。
+/// 由外部循环调用 开始 → 反复(取到期槽位 → 发送 → 记账) → 判断是否全部完成。
+/// </summary>
+public sealed class ClickSession
+{
+    private readonly object _gate = new();
+    private readonly List<SlotState> _slots;
+    private readonly int[] _periods;
+    private readonly bool[] _active;
+    private readonly long[] _nextDue;
+
+    public ClickSession(IEnumerable<SlotState> slots)
+    {
+        _slots = slots.Select(s => s.Clone()).ToList();
+        foreach (SlotState slot in _slots) slot.RunCount = 0;
+
+        _periods = new int[_slots.Count];
+        _active = new bool[_slots.Count];
+        _nextDue = new long[_slots.Count];
+
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            _periods[i] = _slots[i].EffectivePeriodMs;
+            _active[i] = _slots[i].IsActive;
+        }
+    }
+
+    public IReadOnlyList<SlotState> Slots => _slots;
+
+    public int ActiveCount
+    {
+        get
+        {
+            lock (_gate) return _active.Count(flag => flag);
+        }
+    }
+
+    /// <summary>开始计时：第一次发送发生在“现在 + 一个间隔”之后。</summary>
+    public void Begin(long nowMilliseconds)
+    {
+        lock (_gate)
+        {
+            for (int i = 0; i < _slots.Count; i++)
+            {
+                if (_active[i]) _nextDue[i] = nowMilliseconds + _periods[i];
+            }
+        }
+    }
+
+    /// <summary>取出此刻到期的槽位下标（按行号顺序），并推进它们的到期时间。</summary>
+    public List<int> CollectDue(long nowMilliseconds)
+    {
+        var due = new List<int>(4);
+
+        lock (_gate)
+        {
+            for (int i = 0; i < _slots.Count; i++)
+            {
+                if (!_active[i]) continue;
+                if (_nextDue[i] > nowMilliseconds) continue;
+
+                due.Add(i);
+                _nextDue[i] += _periods[i];
+
+                // 落后太多时不要补发，直接以“现在”为基准重排，避免爆发式连发
+                if (_nextDue[i] <= nowMilliseconds) _nextDue[i] = nowMilliseconds + _periods[i];
+            }
+        }
+
+        return due;
+    }
+
+    /// <summary>距离下一个到期还有多少毫秒；没有活动槽位时返回 long.MaxValue。</summary>
+    public long MillisecondsUntilNextDue(long nowMilliseconds)
+    {
+        lock (_gate)
+        {
+            long best = long.MaxValue;
+            for (int i = 0; i < _slots.Count; i++)
+            {
+                if (!_active[i]) continue;
+                long delta = _nextDue[i] - nowMilliseconds;
+                if (delta < best) best = delta;
+            }
+
+            return best == long.MaxValue ? long.MaxValue : Math.Max(0, best);
+        }
+    }
+
+    /// <summary>记录一次成功发送。</summary>
+    public void RecordSent(int index)
+    {
+        lock (_gate)
+        {
+            SlotState slot = _slots[index];
+            slot.RunCount++;
+            slot.Done++;
+            if (slot.IsSaturated) _active[index] = false;
+        }
+    }
+
+    /// <summary>是否所有槽位都已完成（无限次数的槽位永远不会完成）。</summary>
+    public bool AllRunsFinished
+    {
+        get
+        {
+            lock (_gate) return !_active.Any(flag => flag);
+        }
+    }
+
+    /// <summary>取一份线程安全的快照。</summary>
+    public IReadOnlyList<SlotState> Snapshot()
+    {
+        lock (_gate) return _slots.Select(s => s.Clone()).ToList();
+    }
+
+    /// <summary>累计次数的最大值（自动跳过数据此计算）。</summary>
+    public static int MaxDone(IEnumerable<SlotState> slots)
+    {
+        int max = 0;
+        foreach (SlotState slot in slots)
+        {
+            if (slot.Done > max) max = slot.Done;
+        }
+
+        return max;
+    }
+}
