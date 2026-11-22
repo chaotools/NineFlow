@@ -342,6 +342,20 @@ internal class AppTextField : Panel
 
     public int RightInset { get; set; } = 10;
 
+    private bool _capturing;
+
+    /// <summary>正在等待用户按键：边框转红，提示这格现在是"录入中"。</summary>
+    public bool Capturing
+    {
+        get => _capturing;
+        set
+        {
+            if (_capturing == value) return;
+            _capturing = value;
+            Invalidate();
+        }
+    }
+
     private Color _valueColor = Theme.TextPrimary;
 
     /// <summary>文字颜色（未启用状态下会自动变浅）。</summary>
@@ -396,18 +410,20 @@ internal class AppTextField : Panel
 
             Color borderColor = !Enabled
                 ? Theme.CardBorder
-                : _focused
-                    ? Theme.FieldBorderFocused
-                    : Theme.FieldBorder;
+                : _capturing
+                    ? Theme.Red
+                    : _focused
+                        ? Theme.FieldBorderFocused
+                        : Theme.FieldBorder;
 
-            using var border = new Pen(borderColor, _focused ? 1.6f : 1f);
+            using var border = new Pen(borderColor, _capturing || _focused ? 1.6f : 1f);
             g.DrawPath(border, path);
 
-            if (_focused && Enabled)
+            if ((_capturing || _focused) && Enabled)
             {
                 var ringRect = new Rectangle(-2, -2, Width + 3, Height + 3);
                 using GraphicsPath ringPath = Theme.RoundedRect(ringRect, Radius + 2);
-                using var ring = new Pen(Color.FromArgb(50, Theme.Accent), 2f);
+                using var ring = new Pen(Color.FromArgb(50, _capturing ? Theme.Red : Theme.Accent), 2f);
                 g.DrawPath(ring, ringPath);
             }
         });
@@ -445,7 +461,13 @@ internal sealed class KeyField : AppTextField
     {
         RightInset = 30;
         Placeholder = UiText.T("row.placeholder");
+
+        // 双击输入框同样可以进入按键捕获
+        Editor.DoubleClick += (_, _) => CaptureRequested?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>用户要求录键（点了下拉第一项，或双击了输入框）。</summary>
+    public event EventHandler? CaptureRequested;
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -507,6 +529,12 @@ internal sealed class KeyField : AppTextField
             ShowImageMargin = false,
             BackColor = Color.White,
         };
+
+        // 第一项就是「按下要用的键」，让"按键可以自己定义"一眼可见，下面才是常用候选
+        var capture = new ToolStripMenuItem(UiText.T("menu.captureKey"));
+        capture.Click += (_, _) => CaptureRequested?.Invoke(this, EventArgs.Empty);
+        menu.Items.Add(capture);
+        menu.Items.Add(new ToolStripSeparator());
 
         foreach (string suggestion in Suggestions)
         {

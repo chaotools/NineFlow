@@ -32,6 +32,11 @@ public static class UiText
         ["row.placeholder"] = "Down / ^a 等",
         ["field.placeholder.count"] = "0",
 
+        ["menu.captureKey"] = "按下要用的键…",
+        ["capture.hint"] = "请按下要用的键…（Esc 取消）",
+        ["capture.timeout"] = "等待按键超时，已取消",
+        ["capture.failed"] = "无法开始录键（键盘钩子装不上，可能被安全软件拦了），请手动填写按键",
+
         ["button.save"] = "保存配置",
         ["button.load"] = "读取配置",
         ["button.start"] = "开始连点",
@@ -56,6 +61,9 @@ public static class UiText
         ["status.noConfig"] = "状态：没有找到配置文件，请先保存配置。",
         ["status.reset"] = "状态：进度已清零，下一轮将从第 1 项重新开始。",
         ["status.resetWhileRunning"] = "状态：正在连点，不能重置进度。请先按 {0} 停止。",
+        ["status.capturing"] = "状态：等待按键…直接按下要用的键，按 Esc 取消。",
+        ["status.keyCaptured"] = "状态：已录入 {0}。也可以按 ^a / Ctrl+A 这类写法自己改。",
+        ["status.captureFailed"] = "状态：{0}",
         ["status.noActive"] = "状态：没有启用的按键。请至少勾选一行并填写组合按键。",
         ["status.noTarget"] = "状态：还没有选择目标窗口。请先点一下要接收按键的窗口（例如微信），再按 {0} 开始。",
         ["status.badSkipCount"] = "状态：跳过数“{0}”不是整数；留空表示自动取累计次数。",
@@ -101,7 +109,7 @@ public static class UiText
         ["row.countInvalid"] = "第 {0} 行：次数“{1}”不是整数（0 = 无限）。",
 
         ["tooltip.enabled"] = "打开后这一行才会发送按键。",
-        ["tooltip.key"] = "要发送的按键。普通键直接写 Down / Enter / F7；组合键写 ^a（Ctrl+A）、!q（Alt+Q）、+s（Shift+S），也可以写 Ctrl+A。",
+        ["tooltip.key"] = "要发送的按键。点右侧 ▾ 选「按下要用的键…」后直接按键盘（也可以双击输入框），或自己写 Down / ^a / Ctrl+A / abc。",
         ["tooltip.interval"] = "每个按键之间的间隔（秒），支持小数，最小 0.01。",
         ["tooltip.count"] = "本轮发送次数：0 = 无限连发；填 9 = 每轮发够 9 次后停止，下一轮自动续点。",
         ["tooltip.hotkeyStart"] = "开始连点的全局快捷键，例如 F7、Ctrl+F7。",

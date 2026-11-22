@@ -45,6 +45,79 @@ internal static class IntegrationTests
         RunHotkeyTests();
         RunTimingTest();
         RunRealInputTests();
+        RunKeyCaptureTest();
+    }
+
+    /// <summary>
+    /// 真实按键捕获：装低级键盘钩子后注入 Ctrl+A，应当录成 ^a。
+    /// 钩子回调排队在安装钩子的线程上，必须 Application.DoEvents 才会被调用。
+    /// 先把一个屏幕外的透明窗口切到前台，万一钩子没生效，注入的键也落不到用户的程序里。
+    /// </summary>
+    private static void RunKeyCaptureTest()
+    {
+        using var form = new Form
+        {
+            ShowInTaskbar = false,
+            FormBorderStyle = FormBorderStyle.None,
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(-4000, -4000),
+            Size = new Size(200, 100),
+            Opacity = 0,
+        };
+
+        form.Show();
+        Application.DoEvents();
+
+        for (int attempt = 0; attempt < 5 && GetForegroundWindow() != form.Handle; attempt++)
+        {
+            keybd_event(0x12, 0, 0, UIntPtr.Zero);
+            keybd_event(0x12, 0, 2, UIntPtr.Zero);
+            SetForegroundWindow(form.Handle);
+            Thread.Sleep(50);
+        }
+
+        using var capture = new KeyCapture(timeoutMs: 4000);
+        string? captured = null;
+        string? cancelled = null;
+        capture.Captured += text => captured = text;
+        capture.Cancelled += reason => cancelled = reason;
+
+        Program.Check("按键捕获可以装上钩子", capture.Start());
+
+        // Ctrl 按下 → A 按下 → 抬起。捕获期间这些都会被钩子吞掉。
+        keybd_event(0x11, 0, 0, UIntPtr.Zero);
+        keybd_event(0x41, 0, 0, UIntPtr.Zero);
+        keybd_event(0x41, 0, 2, UIntPtr.Zero);
+        keybd_event(0x11, 0, 2, UIntPtr.Zero);
+
+        var clock = Stopwatch.StartNew();
+        while (captured == null && cancelled == null && clock.ElapsedMilliseconds < 3000) Application.DoEvents();
+
+        Program.Equal("注入 Ctrl+A 被录成 ^a", "^a", captured ?? (cancelled ?? "(没有事件)"));
+        Program.Check("捕获成功后自动卸钩子", !capture.IsCapturing);
+
+        // 取消路径：Stop 之后必须立刻不再处于捕获状态，否则键盘会一直被吞
+        using var cancelledCapture = new KeyCapture(timeoutMs: 4000);
+        Program.Check("第二次可以装上钩子", cancelledCapture.Start());
+        cancelledCapture.Stop();
+        Program.Check("Stop 之后不再处于捕获状态", !cancelledCapture.IsCapturing);
+
+        // 兜底超时：没人按键时必须自动卸钩子，否则键盘会被一直吞掉
+        using var timeoutCapture = new KeyCapture(timeoutMs: 300);
+        using var timeoutSignal = new ManualResetEventSlim();
+        string? timeoutReason = null;
+        timeoutCapture.Cancelled += reason =>
+        {
+            timeoutReason = reason;
+            timeoutSignal.Set();
+        };
+
+        Program.Check("超时测试可以装上钩子", timeoutCapture.Start());
+        Program.Check("超时后派发取消事件", timeoutSignal.Wait(4000), "4 秒内没有取消");
+        Program.Check("超时后已卸掉钩子", !timeoutCapture.IsCapturing);
+        Program.Check("超时取消带原因", !string.IsNullOrEmpty(timeoutReason), timeoutReason ?? "(null)");
+
+        form.Close();
     }
 
     private sealed class HotkeyTestForm : Form

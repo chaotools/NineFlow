@@ -35,6 +35,7 @@ public sealed class MainForm : Form
 
     private readonly SettingsStore _store;
     private readonly ClickEngine _engine;
+    private readonly KeyCapture _keyCapture;
     private readonly EventWaitHandle? _showEvent;
 
     private AppSettings _settings;
@@ -85,6 +86,12 @@ public sealed class MainForm : Form
     /// <summary>已经处理过停止回调的那一轮编号；防止同一轮被 StopClicking 和 Stopped 处理两次。</summary>
     private int _handledStopRun;
 
+    /// <summary>正在录键的行下标；-1 表示没在录。</summary>
+    private int _captureIndex = -1;
+
+    /// <summary>开始录键时该行原来的内容，取消时恢复回去。</summary>
+    private string _captureBackup = string.Empty;
+
     private bool _closing;
     private bool _exiting;
     private bool _balloonShown;
@@ -114,6 +121,10 @@ public sealed class MainForm : Form
         };
         _engine.ProgressChanged += HandleEngineProgressChanged;
         _engine.Stopped += HandleEngineStopped;
+
+        _keyCapture = new KeyCapture();
+        _keyCapture.Captured += HandleKeyCaptured;
+        _keyCapture.Cancelled += HandleKeyCaptureCancelled;
 
         BuildUi();
         ApplySettings(_settings);
@@ -233,6 +244,7 @@ public sealed class MainForm : Form
             };
             keyField.Editor.Name = $"slot{i + 1}.key";
             keyField.Editor.TextChanged += (_, _) => OnSlotFieldChanged();
+            keyField.CaptureRequested += (_, _) => BeginKeyCapture(index);
             _cardSlots.Controls.Add(keyField);
             _tooltips.Add((keyField, "tooltip.key"));
 
@@ -612,6 +624,7 @@ public sealed class MainForm : Form
 
         _hotkeys?.Dispose();
         _hotkeys = null;
+        _keyCapture.Dispose();
         _engine.Dispose();
 
         if (_tray != null)
@@ -779,6 +792,9 @@ public sealed class MainForm : Form
     {
         if (_closing) return;
         if (_engine.IsRunning) return;
+
+        // 录键时钩子会吞掉所有键盘输入，连点发出去的键也会被它吃掉，先收掉
+        CancelKeyCapture(restoreValue: true);
 
         // 开始前按当前文本重新注册热键
         List<string> hotkeyProblems = RegisterHotkeys(reportErrors: false);
@@ -981,6 +997,102 @@ public sealed class MainForm : Form
                 ? UiText.T("hotkey.taken", definition!.Display)
                 : UiText.T("hotkey.failed", definition!.Display, win32Error);
             problems.Add(reason);
+        }
+    }
+
+    // ---------------------------------------------------------------- 按键捕获
+
+    private void BeginKeyCapture(int index)
+    {
+        if (_closing || _engine.IsRunning) return;
+
+        // 同一时刻只录一个键：先把上一次（如果有）收干净
+        CancelKeyCapture(restoreValue: true);
+
+        if (!_keyCapture.Start())
+        {
+            SetStatus("status.captureFailed", Theme.Orange, UiText.T("capture.failed"));
+            return;
+        }
+
+        _captureIndex = index;
+        _captureBackup = _keyFields[index].Value;
+
+        KeyField field = _keyFields[index];
+        field.Capturing = true;
+        field.Placeholder = UiText.T("capture.hint");
+        field.Value = string.Empty;
+
+        SetStatus("status.capturing", Theme.Orange);
+    }
+
+    /// <summary>收起录键的界面状态；restoreValue 为 true 时把原来的按键内容放回去。</summary>
+    private void EndKeyCapture(bool restoreValue)
+    {
+        if (_captureIndex < 0) return;
+
+        KeyField field = _keyFields[_captureIndex];
+        field.Capturing = false;
+        field.Placeholder = UiText.T("row.placeholder");
+        if (restoreValue) field.Value = _captureBackup;
+
+        _captureIndex = -1;
+        _captureBackup = string.Empty;
+    }
+
+    /// <summary>主动放弃录键（开始连点、关闭窗口、换一行录）。</summary>
+    private void CancelKeyCapture(bool restoreValue)
+    {
+        _keyCapture.Stop();
+        EndKeyCapture(restoreValue);
+    }
+
+    private void HandleKeyCaptured(string text)
+    {
+        if (_closing || IsDisposed) return;
+
+        if (InvokeRequired)
+        {
+            TryBeginInvoke(() => HandleKeyCaptured(text));
+            return;
+        }
+
+        int index = _captureIndex;
+        EndKeyCapture(restoreValue: false);
+
+        if (index < 0 || index >= SlotCount) return;
+
+        _keyFields[index].Value = text;
+        _keyFields[index].Editor.SelectionStart = _keyFields[index].Editor.TextLength;
+        SetStatus("status.keyCaptured", Theme.Green, text);
+    }
+
+    private void HandleKeyCaptureCancelled(string? reason)
+    {
+        if (_closing || IsDisposed) return;
+
+        if (InvokeRequired)
+        {
+            TryBeginInvoke(() => HandleKeyCaptureCancelled(reason));
+            return;
+        }
+
+        EndKeyCapture(restoreValue: true);
+
+        if (reason != null) SetStatus("status.captureFailed", Theme.Orange, reason);
+        else SetIdleStatus(Theme.TextPrimary);
+    }
+
+    /// <summary>捕获事件可能来自超时定时器的线程池线程，需要切回界面线程。</summary>
+    private void TryBeginInvoke(Action action)
+    {
+        try
+        {
+            BeginInvoke(action);
+        }
+        catch (InvalidOperationException)
+        {
+            // 窗口已销毁：丢掉即可
         }
     }
 
