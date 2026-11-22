@@ -1,12 +1,12 @@
 # 九序 / NineFlow
 
 [![build](https://github.com/chaotools/NineFlow/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/chaotools/NineFlow/actions/workflows/build.yml)
-[![release](https://img.shields.io/badge/release-v1.1.4-blue)](https://github.com/chaotools/NineFlow/releases/latest)
+[![release](https://img.shields.io/github/v/release/chaotools/NineFlow?sort=semver)](https://github.com/chaotools/NineFlow/releases/latest)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![tests](https://img.shields.io/badge/tests-221%20passed-brightgreen)](#6-测试)
 [![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6)](#1-功能)
 
-> 徽章说明：仓库为私有，shields.io 无法读取私有库的 release/license，故 release、license、tests 用静态徽章；build 徽章来自 GitHub Actions，会实时反映构建状态。
+> 徽章说明：`build` 来自 GitHub Actions，实时反映构建状态；`release` 由 shields.io 读取最新 Release，自动跟随版本；`license`、`tests`、`platform` 为静态徽章。
 
 Windows 桌面「多键连发 · 智能续点」工具，免安装、双击即用，**关闭窗口后可在托盘后台常驻**。
 
