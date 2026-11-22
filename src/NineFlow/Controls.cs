@@ -318,12 +318,6 @@ internal class AppTextField : Panel
         }
     }
 
-    public bool ReadOnlyField
-    {
-        get => _editor.ReadOnly;
-        set => _editor.ReadOnly = value;
-    }
-
     public TextBox Editor => _editor;
 
     public HorizontalAlignment TextAlign
@@ -529,8 +523,6 @@ internal sealed class KeyField : AppTextField
         menu.Closed += (_, _) => menu.Dispose();
         menu.Show(this, new Point(0, Height + 2));
     }
-
-    public void RefreshPlaceholder() => Placeholder = UiText.T("row.placeholder");
 }
 
 /// <summary>顶部标题区：Logo + 名称 + 副标题 + 状态胶囊。</summary>

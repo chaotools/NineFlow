@@ -112,13 +112,12 @@ internal static class SettingsStoreTests
             // 3) 保存进度不应破坏其它配置
             List<SlotState> runtime = settings.Slots.Select(slot => slot.Clone()).ToList();
             runtime[0].Done = 40;
-            Program.Check("保存进度成功", store.SaveProgress(runtime, 9, "Down", out string progressError), progressError);
+            Program.Check("保存进度成功", store.SaveProgress(runtime, out string progressError), progressError);
 
             AppSettings afterProgress = store.Load();
             Program.Equal("进度已更新", 40, afterProgress.Slots[0].Done);
             Program.Equal("进度保存后配置仍在", 5, afterProgress.Slots[1].MaxCount);
             Program.Equal("进度保存后热键仍在", "Ctrl+F7", afterProgress.HotkeyOn);
-            Program.Equal("LastSkip 已保存", 9, afterProgress.LastSkip);
 
             // 4) 损坏的文件不应该抛异常
             File.WriteAllText(path, "这不是 ini 文件\n[Slot1\nEnabled=\n");

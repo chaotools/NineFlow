@@ -81,7 +81,6 @@ public sealed class MainForm : Form
     private Color _statusColor = Theme.TextPrimary;
 
     private int _statusQueued;
-    private int _lastSkip;
 
     /// <summary>已经处理过停止回调的那一轮编号；防止同一轮被 StopClicking 和 Stopped 处理两次。</summary>
     private int _handledStopRun;
@@ -664,8 +663,6 @@ public sealed class MainForm : Form
         _swCloseToTray.Checked = settings.CloseToTray;
         _swTopMost.Checked = settings.TopMost;
 
-        _lastSkip = settings.LastSkip;
-
         UpdateAutoSkipLabel();
         RefreshSummary();
     }
@@ -850,7 +847,6 @@ public sealed class MainForm : Form
             return;
         }
 
-        _lastSkip = skipCount;
         SetRunningState(true);
         PlayStartSound();
         RenderProgress(_engine.Snapshot());
@@ -918,13 +914,12 @@ public sealed class MainForm : Form
     {
         if (_closing) return;
 
+        // 运行中按钮本来就是禁用的，正常走不到这里；将来若放开，也绝不能边跑边清零。
+        // （旧实现在这里调 Application.DoEvents() 去“处理排队中的回调”，会把停止事件重入派发进来）
         if (_engine.IsRunning)
         {
-            EngineStopResult? stopResult = _engine.Stop();
-            if (stopResult != null) PersistProgress(stopResult.Slots);
-
-            // 把已经排队但还没执行的“本轮完成 / 出错”回调先处理掉
-            Application.DoEvents();
+            SetStatus("status.resetWhileRunning", Theme.Orange, HotkeyOffText);
+            return;
         }
 
         foreach (SlotState slot in _settings.Slots)
@@ -933,7 +928,6 @@ public sealed class MainForm : Form
             slot.RunCount = 0;
         }
 
-        _lastSkip = 0;
         _skipCountField.Value = string.Empty;
 
         string? saveError = PersistProgress(_settings.Slots);
@@ -1307,7 +1301,7 @@ public sealed class MainForm : Form
             }
         }
 
-        if (_store.SaveProgress(_settings.Slots, _lastSkip, _skipKeyField.Value.Trim(), out string error)) return null;
+        if (_store.SaveProgress(_settings.Slots, out string error)) return null;
 
         return error;
     }

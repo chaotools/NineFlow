@@ -55,6 +55,7 @@ public static class UiText
         ["status.loaded"] = "状态：配置已读取。",
         ["status.noConfig"] = "状态：没有找到配置文件，请先保存配置。",
         ["status.reset"] = "状态：进度已清零，下一轮将从第 1 项重新开始。",
+        ["status.resetWhileRunning"] = "状态：正在连点，不能重置进度。请先按 {0} 停止。",
         ["status.noActive"] = "状态：没有启用的按键。请至少勾选一行并填写组合按键。",
         ["status.noTarget"] = "状态：还没有选择目标窗口。请先点一下要接收按键的窗口（例如微信），再按 {0} 开始。",
         ["status.badSkipCount"] = "状态：跳过数“{0}”不是整数；留空表示自动取累计次数。",

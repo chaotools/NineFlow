@@ -106,7 +106,7 @@ public static class SendSpec
         if (tokens.Count == 0) return string.Empty;
         return string.Join(" ", tokens.Select(token =>
         {
-            if (token.Kind == StrokeKind.Mouse) return token.Mouse.ToString();
+            if (token.Kind == StrokeKind.Mouse) return FormatModifiers(token.Modifiers) + token.Mouse;
             string body = token.IsCharacter ? token.Character.ToString() : KeyNames.GetDisplayName(token.VirtualKey);
             return FormatModifiers(token.Modifiers) + body;
         }));

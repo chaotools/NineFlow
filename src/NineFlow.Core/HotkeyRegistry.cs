@@ -28,8 +28,6 @@ public sealed class HotkeyRegistry : IDisposable
 
     public HotkeyRegistry(IntPtr hwnd) => _hwnd = hwnd;
 
-    public bool IsRegistered(int id) => _entries.ContainsKey(id);
-
     /// <summary>
     /// 注册（会先注销同 id 的旧热键）。
     /// 新热键注册失败时会把旧热键装回去——否则改错一个快捷键，会把原本能用的那个一起丢掉，
