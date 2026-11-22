@@ -85,7 +85,7 @@ Write-Output ""
 Write-Output "== D. 文件信息 =="
 $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
 Check "D 产品名是九序" ($info.ProductName -eq "九序") "实际: $($info.ProductName)"
-Check "D 版本号为 1.1.2" ($info.FileVersion -like "1.1.2*") "实际: $($info.FileVersion)"
+Check "D 版本号为 1.1.3" ($info.FileVersion -like "1.1.3*") "实际: $($info.FileVersion)"
 
 Write-Output ""
 Write-Output "== E. 收尾 =="

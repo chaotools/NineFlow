@@ -107,7 +107,7 @@ internal static class Theme
         int width = Math.Max(1, size.Width);
         int height = Math.Max(1, size.Height);
 
-        using var bitmap = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using var bitmap = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppRgb);
 
         using (var graphics = Graphics.FromImage(bitmap))
         {

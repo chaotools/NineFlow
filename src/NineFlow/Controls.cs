@@ -88,27 +88,25 @@ internal sealed class AppButton : Button
     protected override void OnPaint(PaintEventArgs e)
     {
         Color surround = Parent?.BackColor ?? Theme.Page;
+        (Color back, Color fore) = ResolveColors();
+        var rect = new Rectangle(0, 0, Width, Height);
 
-        // 先合成到不透明位图再整块贴出：圆角抗锯齿只与周围色混合，不会出现黑边/灰边
+        // 圆角背景先合成到不透明位图再整块贴出：抗锯齿只与周围色混合，不会出现黑边
         Theme.RenderOpaque(e.Graphics, Size, surround, g =>
         {
-            (Color back, Color fore) = ResolveColors();
-            var rect = new Rectangle(0, 0, Width, Height);
-
             using GraphicsPath path = Theme.RoundedRect(rect, CornerRadius);
-            using (var fill = new SolidBrush(back))
-            {
-                g.FillPath(fill, path);
-            }
-
-            TextRenderer.DrawText(
-                g,
-                Text,
-                Font,
-                rect,
-                fore,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            using var fill = new SolidBrush(back);
+            g.FillPath(fill, path);
         });
+
+        // 文字直接画在窗口表面（不经过位图），保持 ClearType 清晰度
+        TextRenderer.DrawText(
+            e.Graphics,
+            Text,
+            Font,
+            rect,
+            fore,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
     }
 
     private (Color Back, Color Fore) ResolveColors()
