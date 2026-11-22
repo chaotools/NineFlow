@@ -97,6 +97,29 @@ internal static class Theme
         return path;
     }
 
+    /// <summary>
+    /// 把自定义绘制先合成到一张不透明位图上，再整块贴到目标 Graphics。
+    /// 这样圆角/边缘的抗锯齿只会与指定的背景色混合，
+    /// 不会和窗口表面未绘制的像素（默认黑色）混合，避免出现黑边。
+    /// </summary>
+    public static void RenderOpaque(Graphics target, Size size, Color background, Action<Graphics> draw)
+    {
+        int width = Math.Max(1, size.Width);
+        int height = Math.Max(1, size.Height);
+
+        using var bitmap = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(background);
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            draw(graphics);
+        }
+
+        target.DrawImageUnscaled(bitmap, 0, 0);
+    }
+
     /// <summary>卡片阴影：几层低透明度圆角矩形叠加，模拟 macOS 的柔和投影。</summary>
     public static void DrawShadow(Graphics graphics, Rectangle bounds, int radius, int spread = 5)
     {

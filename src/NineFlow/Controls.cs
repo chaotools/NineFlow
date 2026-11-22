@@ -26,23 +26,19 @@ internal sealed class CardPanel : Panel
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        Graphics g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-
-        using (var background = new SolidBrush(Theme.Page))
+        // 先合成到不透明位图再整块贴出，避免圆角抗锯齿轮廓和未绘制像素混合出现黑边
+        Theme.RenderOpaque(e.Graphics, Size, Theme.Page, g =>
         {
-            g.FillRectangle(background, ClientRectangle);
-        }
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            using GraphicsPath path = Theme.RoundedRect(rect, CornerRadius);
+            using (var fill = new SolidBrush(Theme.Card))
+            {
+                g.FillPath(fill, path);
+            }
 
-        var rect = new Rectangle(0, 0, Width - 1, Height - 1);
-        using GraphicsPath path = Theme.RoundedRect(rect, CornerRadius);
-        using (var fill = new SolidBrush(Theme.Card))
-        {
-            g.FillPath(fill, path);
-        }
-
-        using var border = new Pen(Theme.CardBorder);
-        g.DrawPath(border, path);
+            using var border = new Pen(Theme.CardBorder);
+            g.DrawPath(border, path);
+        });
     }
 }
 
@@ -91,31 +87,28 @@ internal sealed class AppButton : Button
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        Graphics g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
+        Color surround = Parent?.BackColor ?? Theme.Page;
 
-        // 双缓冲时未绘制的区域会保留黑色，这里先把整个客户区铺成父级背景色
-        using (var background = new SolidBrush(Parent?.BackColor ?? Theme.Page))
+        // 先合成到不透明位图再整块贴出：圆角抗锯齿只与周围色混合，不会出现黑边/灰边
+        Theme.RenderOpaque(e.Graphics, Size, surround, g =>
         {
-            g.FillRectangle(background, ClientRectangle);
-        }
+            (Color back, Color fore) = ResolveColors();
+            var rect = new Rectangle(0, 0, Width, Height);
 
-        (Color back, Color fore) = ResolveColors();
-        var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            using GraphicsPath path = Theme.RoundedRect(rect, CornerRadius);
+            using (var fill = new SolidBrush(back))
+            {
+                g.FillPath(fill, path);
+            }
 
-        using GraphicsPath path = Theme.RoundedRect(rect, CornerRadius);
-        using (var fill = new SolidBrush(back))
-        {
-            g.FillPath(fill, path);
-        }
-
-        TextRenderer.DrawText(
-            g,
-            Text,
-            Font,
-            rect,
-            fore,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(
+                g,
+                Text,
+                Font,
+                rect,
+                fore,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        });
     }
 
     private (Color Back, Color Fore) ResolveColors()
@@ -211,14 +204,8 @@ internal sealed class AppSwitch : CheckBox
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        Graphics g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-
-        using (var background = new SolidBrush(SurfaceColor))
+        Theme.RenderOpaque(e.Graphics, Size, SurfaceColor, g =>
         {
-            g.FillRectangle(background, ClientRectangle);
-        }
-
         int trackWidth = 44;
         int trackHeight = 26;
         var track = new Rectangle((Width - trackWidth) / 2, (Height - trackHeight) / 2, trackWidth - 1, trackHeight - 1);
@@ -249,6 +236,7 @@ internal sealed class AppSwitch : CheckBox
         {
             g.FillEllipse(knobBrush, knobRect);
         }
+        });
     }
 
     protected override void OnMouseEnter(EventArgs e)
@@ -403,36 +391,34 @@ internal class AppTextField : Panel
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        Graphics g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-
-        var rect = new Rectangle(0, 0, Width - 1, Height - 1);
-        using GraphicsPath path = Theme.RoundedRect(rect, Radius);
-
-        Color fill = Enabled ? Theme.FieldFill : Theme.FieldFillDisabled;
-        using (var brush = new SolidBrush(fill))
+        Theme.RenderOpaque(e.Graphics, Size, SurfaceColor, g =>
         {
-            g.FillPath(brush, path);
-        }
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            using GraphicsPath path = Theme.RoundedRect(rect, Radius);
 
-        Color borderColor = !Enabled
-            ? Theme.CardBorder
-            : _focused
-                ? Theme.FieldBorderFocused
-                : Theme.FieldBorder;
+            Color fill = Enabled ? Theme.FieldFill : Theme.FieldFillDisabled;
+            using (var brush = new SolidBrush(fill))
+            {
+                g.FillPath(brush, path);
+            }
 
-        using var border = new Pen(borderColor, _focused ? 1.6f : 1f);
-        g.DrawPath(border, path);
+            Color borderColor = !Enabled
+                ? Theme.CardBorder
+                : _focused
+                    ? Theme.FieldBorderFocused
+                    : Theme.FieldBorder;
 
-        if (_focused && Enabled)
-        {
-            var ringRect = new Rectangle(-2, -2, Width + 3, Height + 3);
-            using GraphicsPath ringPath = Theme.RoundedRect(ringRect, Radius + 2);
-            using var ring = new Pen(Color.FromArgb(50, Theme.Accent), 2f);
-            g.DrawPath(ring, ringPath);
-        }
+            using var border = new Pen(borderColor, _focused ? 1.6f : 1f);
+            g.DrawPath(border, path);
 
-
+            if (_focused && Enabled)
+            {
+                var ringRect = new Rectangle(-2, -2, Width + 3, Height + 3);
+                using GraphicsPath ringPath = Theme.RoundedRect(ringRect, Radius + 2);
+                using var ring = new Pen(Color.FromArgb(50, Theme.Accent), 2f);
+                g.DrawPath(ring, ringPath);
+            }
+        });
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
