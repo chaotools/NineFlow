@@ -107,6 +107,12 @@ internal static class SendSpecTests
         Program.Equal("^LButton 保留 Ctrl", SendSpec.ModControl, ctrlClick[0].Modifiers);
         Program.Equal("^LButton 描述带修饰键", "Ctrl+Left", SendSpec.Describe(ctrlClick));
 
+        // 花括号形式：+ ^ ! # 本身就是修饰符前缀，作按键时必须这样写（按键捕获会产出这种文本）
+        Program.Check("{+} 解析成功", SendSpec.TryParse("{+}", out List<SendToken> bracedPlus, out string bracedPlusError), bracedPlusError);
+        Program.Check("{+} 是加号字符", bracedPlus[0].IsCharacter && bracedPlus[0].Character == '+');
+        Program.Check("^{#} 解析成功", SendSpec.TryParse("^{#}", out List<SendToken> ctrlHash, out _));
+        Program.Equal("^{#} 保留 Ctrl", SendSpec.ModControl, ctrlHash[0].Modifiers);
+
         // 非法输入
         Program.Check("空字符串无效", !SendSpec.TryParse("", out _, out _));
         Program.Check("仅空白无效", !SendSpec.TryParse("   ", out _, out _));

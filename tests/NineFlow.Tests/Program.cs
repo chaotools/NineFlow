@@ -29,6 +29,7 @@ internal static class Program
         RunGroup("AppSettingsOptions", AppSettingsOptionsTests.Run);
         RunGroup("ClickSession", ClickSessionTests.Run);
         RunGroup("ClickEngine", ClickEngineTests.Run);
+        RunGroup("KeyCapture", KeyCaptureTests.Run);
 
         if (skipIntegration)
         {

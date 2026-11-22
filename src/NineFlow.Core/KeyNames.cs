@@ -189,10 +189,13 @@ public static class KeyNames
         return false;
     }
 
-    /// <summary>虚拟键码 → 展示名。</summary>
+    /// <summary>虚拟键码 → 展示名（未知键会返回 VKxx 形式的占位文本）。</summary>
     public static string GetDisplayName(ushort vk)
     {
         if (DisplayMap.TryGetValue(vk, out var name)) return name;
         return "VK" + vk.ToString("X2");
     }
+
+    /// <summary>虚拟键码 → 展示名；未知键返回 false（按键捕获需要据此判断能否识别）。</summary>
+    public static bool TryGetDisplayName(ushort vk, out string name) => DisplayMap.TryGetValue(vk, out name!);
 }
