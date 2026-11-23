@@ -12,7 +12,7 @@ namespace NineFlow;
 /// 中文界面名称为「九序」，英文界面名称为「NineFlow」。
 /// 关闭窗口默认隐藏到托盘继续运行，热键始终可用。
 /// </summary>
-public sealed class MainForm : Form
+public sealed partial class MainForm : Form
 {
     private const int SlotCount = AppDefaults.SlotCount;
 
@@ -63,19 +63,25 @@ public sealed class MainForm : Form
     private AppSwitch _swBeep = null!;
     private AppSwitch _swCloseToTray = null!;
     private AppSwitch _swTopMost = null!;
+    private AppSwitch _swAutoUpdate = null!;
 
     private AppButton _btnSave = null!;
     private AppButton _btnLoad = null!;
     private AppButton _btnStart = null!;
     private AppButton _btnStop = null!;
     private AppButton _btnReset = null!;
+    private AppButton _btnUpdate = null!;
+
+    /// <summary>正在检查或下载更新，避免重复触发。</summary>
+    private bool _updateBusy;
 
     private Label _lblState = null!;
     private Label _lblProgress = null!;
     private Label _lblSummary = null!;
 
-    private readonly List<(Control Control, string Key)> _staticTexts = new();
-    private readonly List<(Control Control, string Key)> _tooltips = new();
+    /// <summary>跨线程读取（引擎回调线程 / ShowListener 线程），必须 volatile。</summary>
+    private volatile bool _closing;
+    private bool _exiting;
 
     private string _statusKey = "status.stopped";
     private object[] _statusArgs = Array.Empty<object>();
@@ -92,8 +98,9 @@ public sealed class MainForm : Form
     /// <summary>开始录键时该行原来的内容，取消时恢复回去。</summary>
     private string _captureBackup = string.Empty;
 
-    private bool _closing;
-    private bool _exiting;
+    /// <summary>控件 → tooltip 文案键；BuildUi 结束后统一 SetToolTip。</summary>
+    private readonly List<(Control Control, string Key)> _tooltips = new();
+
     private bool _balloonShown;
 
     /// <summary>热键注册失败的气泡是否已经弹过（每次运行只弹一次，避免反复骚扰）。</summary>
@@ -195,6 +202,12 @@ public sealed class MainForm : Form
         BuildHotkeyCard();
         BuildButtons();
         BuildStatusCard();
+
+        // 统一挂 tooltip：此前 _tooltips 只收集不消费，除按钮外所有控件的提示都不生效
+        foreach ((Control control, string key) in _tooltips)
+        {
+            _toolTip.SetToolTip(control, UiText.T(key));
+        }
 
         ResumeLayout(true);
     }
@@ -340,6 +353,14 @@ public sealed class MainForm : Form
             SaveOptionsQuietly();
         };
         lblTop.Click += (_, _) => _swTopMost.Checked = !_swTopMost.Checked;
+
+        _swAutoUpdate = AddSwitch(_cardHotkeys, "switch.autoUpdate", 640, 96, 690, 170, out Label lblAutoUpdate, "tooltip.autoUpdate");
+        _swAutoUpdate.CheckedChanged += (_, _) =>
+        {
+            _settings.AutoCheckUpdate = _swAutoUpdate.Checked;
+            SaveOptionsQuietly();
+        };
+        lblAutoUpdate.Click += (_, _) => _swAutoUpdate.Checked = !_swAutoUpdate.Checked;
     }
 
     private AppSwitch AddSwitch(Control parent, string labelKey, int x, int y, int labelX, int labelWidth, out Label label, string tooltipKey)
@@ -378,6 +399,7 @@ public sealed class MainForm : Form
         _btnSave = AddButton("button.save", PageMargin, ButtonsY, 110, "tooltip.save", AppButtonKind.Secondary);
         _btnLoad = AddButton("button.load", PageMargin + 122, ButtonsY, 110, "tooltip.load", AppButtonKind.Secondary);
         _btnReset = AddButton("button.reset", PageMargin + 244, ButtonsY, 110, "tooltip.reset", AppButtonKind.Secondary);
+        _btnUpdate = AddButton("button.update", PageMargin + 366, ButtonsY, 110, "tooltip.update", AppButtonKind.Secondary);
 
         _btnStop = AddButton("button.stop", DesignWidth - PageMargin - 132 - 12 - 120, ButtonsY, 120, "tooltip.stop", AppButtonKind.Danger);
         _btnStart = AddButton("button.start", DesignWidth - PageMargin - 132, ButtonsY, 132, "tooltip.start", AppButtonKind.Primary);
@@ -387,6 +409,7 @@ public sealed class MainForm : Form
         _btnStart.Click += (_, _) => StartClicking();
         _btnStop.Click += (_, _) => StopClicking();
         _btnReset.Click += (_, _) => ResetProgress();
+        _btnUpdate.Click += async (_, _) => await CheckForUpdatesAsync(manual: true);
     }
 
     private AppButton AddButton(string key, int x, int y, int width, string tooltipKey, AppButtonKind kind)
@@ -401,9 +424,7 @@ public sealed class MainForm : Form
 
         button.Text = UiText.T(key);
         _root.Controls.Add(button);
-        _staticTexts.Add((button, key));
         _tooltips.Add((button, tooltipKey));
-        _toolTip.SetToolTip(button, UiText.T(tooltipKey));
         return button;
     }
 
@@ -446,7 +467,6 @@ public sealed class MainForm : Form
         if (key != null)
         {
             label.Text = UiText.T(key);
-            _staticTexts.Add((label, key));
         }
 
         parent.Controls.Add(label);
@@ -622,8 +642,12 @@ public sealed class MainForm : Form
         _targetTimer = null;
 
         EngineStopResult? result = _engine.Stop();
+
+        // 退出前把界面上的改动一并落盘：只存进度和 General 的话，
+        // 用户改了按键/间隔/热键没点“保存配置”就关窗，改动会全部丢失
+        SyncSettingsFromUi();
         PersistProgress(result?.Slots ?? _settings.Slots);
-        SaveOptionsQuietly();
+        _store.SaveConfig(_settings, out _);
 
         _hotkeys?.Dispose();
         _hotkeys = null;
@@ -640,9 +664,9 @@ public sealed class MainForm : Form
 
     private void ExitApplication()
     {
+        // 停止引擎与保存配置统一交给 OnFormClosing：这里自己 Stop + Persist 会
+        // 丢弃 Stop 返回的最终快照，进度保存全靠 OnFormClosing 的二次 Stop “碰巧正确”
         _exiting = true;
-        if (_engine.IsRunning) _engine.Stop();
-        PersistProgress(_settings.Slots);
         Close();
     }
 
@@ -678,6 +702,7 @@ public sealed class MainForm : Form
         _swBeep.Checked = settings.Beep;
         _swCloseToTray.Checked = settings.CloseToTray;
         _swTopMost.Checked = settings.TopMost;
+        _swAutoUpdate.Checked = settings.AutoCheckUpdate;
 
         UpdateAutoSkipLabel();
         RefreshSummary();
@@ -740,17 +765,13 @@ public sealed class MainForm : Form
 
     private List<SlotState> ReadSlotsFromUi() => ReadSlotsFromUi(new List<string>(), validate: false);
 
-    private void SaveOptionsQuietly() => _store.SaveOptions(_settings, out _);
-
-    // ---------------------------------------------------------------- 按钮动作
-
-    private void SaveConfig()
+    /// <summary>
+    /// 把界面上的当前编辑内容收进 _settings（不做校验）。
+    /// 保存配置与退出兜底保存共用，保证两条路径写入的内容一致。
+    /// </summary>
+    private void SyncSettingsFromUi()
     {
-        var errors = new List<string>();
-        List<SlotState> slots = ReadSlotsFromUi(errors, validate: true);
-        if (ReportValidationErrors(errors)) return;
-
-        _settings.Slots = slots;
+        _settings.Slots = ReadSlotsFromUi();
         _settings.HotkeyOn = _hotkeyOnField.Value.Trim();
         _settings.HotkeyOff = _hotkeyOffField.Value.Trim();
         _settings.SkipKey = _skipKeyField.Value.Trim();
@@ -758,6 +779,20 @@ public sealed class MainForm : Form
         _settings.Beep = _swBeep.Checked;
         _settings.CloseToTray = _swCloseToTray.Checked;
         _settings.TopMost = _swTopMost.Checked;
+        _settings.AutoCheckUpdate = _swAutoUpdate.Checked;
+    }
+
+    private void SaveOptionsQuietly() => _store.SaveOptions(_settings, out _);
+
+    // ---------------------------------------------------------------- 按钮动作
+
+    private void SaveConfig()
+    {
+        var errors = new List<string>();
+        ReadSlotsFromUi(errors, validate: true);
+        if (ReportValidationErrors(errors)) return;
+
+        SyncSettingsFromUi();
 
         if (!_store.SaveConfig(_settings, out string error))
         {
@@ -802,9 +837,6 @@ public sealed class MainForm : Form
 
         // 录键时钩子会吞掉所有键盘输入，连点发出去的键也会被它吃掉，先收掉
         CancelKeyCapture(restoreValue: true);
-
-        // 开始前按当前文本重新注册热键
-        List<string> hotkeyProblems = RegisterHotkeys();
 
         var errors = new List<string>();
         List<SlotState> slots = ReadSlotsFromUi(errors, validate: true);
@@ -898,6 +930,10 @@ public sealed class MainForm : Form
             SetStatus("status.noTarget", Theme.Orange, HotkeyOnText);
             return;
         }
+
+        // 校验全部通过后才按当前文本重注册热键：反过来的话，校验失败提前返回时
+        // 旧热键已经被注销/替换，可能把原本能用的停止热键弄丢
+        List<string> hotkeyProblems = RegisterHotkeys();
 
         if (!_engine.Start(slots, skipKey, skipCount, out string startError))
         {

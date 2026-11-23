@@ -3,7 +3,7 @@
 [![build](https://github.com/chaotools/NineFlow/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/chaotools/NineFlow/actions/workflows/build.yml)
 [![release](https://img.shields.io/github/v/release/chaotools/NineFlow?sort=semver)](https://github.com/chaotools/NineFlow/releases/latest)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-299%20passed-brightgreen)](#6-测试)
+[![tests](https://img.shields.io/badge/tests-325%20passed-brightgreen)](#6-测试)
 [![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6)](#1-功能)
 
 > 徽章说明：`build` 来自 GitHub Actions，实时反映构建状态；`release` 由 shields.io 读取最新 Release，自动跟随版本；`license`、`tests`、`platform` 为静态徽章。
@@ -23,6 +23,8 @@ Windows 桌面「多键连发 · 智能续点」工具，免安装、双击即�
 - **10 行独立按键**：每行独立开关、按键、间隔（秒）、次数（0 = 无限）。
 - **按键直接录**：点输入框右侧 ▾ 选「按下要用的键…」（或双击输入框），
   按下键盘上任意键即可，组合键也能录（`Ctrl+Shift+S` 会写成 `^+s`）；当然也可以自己填。
+- **检查更新**：点「检查更新」或启动时自动查 GitHub 最新版；发现新版确认后
+  静默下载、校验、替换 exe 并自动重启，`NineFlow.ini` 配置与进度保留。
 - **续点**：重开页面后按一次热键即可跳过已处理项继续，进度自动保存。
 - **全局热键**：默认 F7 开始、F8 停止，可自行修改；运行中锁定编辑区。
 - **托盘常驻**：点关闭只是缩到托盘，热键继续可用；双击托盘图标或再次双击 exe 唤回窗口。
@@ -88,16 +90,19 @@ NineFlow\
 │  │  ├─ ClickSession.cs       连点调度纯逻辑
 │  │  ├─ ClickEngine.cs        后台线程 + 高精度计时 + 跳过 + 发送前回调
 │  │  ├─ WindowsDesktop.cs     前台窗口 / 目标窗口工具
+│  │  ├─ UpdateService.cs      检查 GitHub Release / 下载并校验更新包
+│  │  ├─ UpdateInstaller.cs    退出后替换 exe 并重启的脚本
 │  │  ├─ UiText.cs             界面文案
 │  │  └─ TimePeriod.cs         timeBeginPeriod(1)
 │  └─ NineFlow\                WinForms 界面（苹果风）
 │     ├─ Program.cs            入口、单实例唤起、全局异常兜底
 │     ├─ MainForm.cs           主窗口、托盘、热键、状态机
+│     ├─ Updates.cs            检查更新 / 确认 / 静默安装流程
 │     ├─ Controls.cs           自绘卡片 / 按钮 / 开关 / 输入框 / 顶栏
 │     ├─ Theme.cs              配色、字体、圆角
 │     └─ Assets.cs             内嵌图标与 Logo
 ├─ tests\
-│  ├─ NineFlow.Tests\          299 项逻辑测试（控制台运行，无第三方框架）
+│  ├─ NineFlow.Tests\          325 项逻辑测试（控制台运行，无第三方框架）
 │  └─ KeyCatcher\              测试辅助：全局键盘钩子记录按键
 ├─ tools\                      发布版 exe 的端到端测试与截图脚本
 └─ build.ps1                   一键构建
@@ -141,9 +146,10 @@ dotnet build tests\NineFlow.Tests\NineFlow.Tests.csproj -c Release
 dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll
 ```
 
-- **331 项**单元 / 集成测试：INI 解析与往返、配置与界面选项、按键名映射、
+- **357 项**单元 / 集成测试：INI 解析与往返、配置与界面选项、按键名映射、
   组合按键解析、热键解析、连点调度与引擎、真实 `RegisterHotKey` + `WM_HOTKEY`、
-  真实 `SendInput` 投递、0.02 秒发送频率。
+  真实 `SendInput` 投递、0.02 秒发送频率；更新检查的 Release 解析、版本比较、
+  下载地址校验与替换脚本。
 - **42 项**对发布版 exe 的端到端测试（`tools\e2e-v2.ps1`，UI 自动化驱动真实窗口 +
   全局键盘钩子统计按键）：
   - 名称与自动化元素、摘要文案
@@ -153,7 +159,7 @@ dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll
   - F7/F8 开始停止与进度保存
   - 关闭到托盘关闭时正常退出并保存进度
 - **`tools\verify-delivery.ps1`**：交付目录自检（启动、自建 ini、工作目录无关性、单实例）。
-- **CI**：推送到 `main` 时 GitHub Actions 在 Windows 上编译并运行 299 项逻辑测试（跳过需要真实桌面的 32 项集成测试），产物可在 Actions 页面下载。
+- **CI**：推送到 `main` 时 GitHub Actions 在 Windows 上编译并运行 325 项逻辑测试（跳过需要真实桌面的 32 项集成测试），产物可在 Actions 页面下载。
 
 ---
 
@@ -188,6 +194,7 @@ Count=
 CloseToTray=1
 Beep=1
 TopMost=0
+AutoCheckUpdate=1
 
 [Progress]
 LastSkip=0
@@ -220,6 +227,7 @@ SkipKey=Down
 - 只做「发送按键」，不做图像识别 / 窗口定位，需要用户先把目标窗口切到前台。
 - 定时精度受系统调度影响；0.02 秒配置下实测频率符合预期。
 - 未做代码签名，首次运行可能出现 SmartScreen 提示。
+- 检查更新需要联网访问 GitHub；自动替换要求 exe 所在目录可写（`Program Files` 等只读目录会提示失败，需手动下载覆盖）。
 
 ---
 

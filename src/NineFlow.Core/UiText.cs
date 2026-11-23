@@ -42,10 +42,12 @@ public static class UiText
         ["button.start"] = "开始连点",
         ["button.stop"] = "停止连点",
         ["button.reset"] = "重置进度",
+        ["button.update"] = "检查更新",
 
         ["switch.beep"] = "提示音",
         ["switch.closeToTray"] = "关闭窗口时隐藏到托盘",
         ["switch.topMost"] = "窗口置顶",
+        ["switch.autoUpdate"] = "启动时检查更新",
 
         ["status.stopped"] = "状态：已停止。设置好后按 {0} 开始，{1} 停止。",
         ["status.running"] = "状态：运行中。按 {0} 停止。",
@@ -73,6 +75,17 @@ public static class UiText
         ["status.badSkipCount"] = "状态：跳过数“{0}”不是整数；留空表示自动取累计次数。",
         ["status.keyInvalid"] = "状态：第 {0} 行按键“{1}”无效：{2}",
         ["status.skipInvalid"] = "状态：跳过键“{0}”无效：{1}",
+
+        ["status.checkingUpdate"] = "状态：正在检查更新…",
+        ["status.upToDate"] = "状态：已是最新版（{0}）。",
+        ["status.updateAvailable"] = "状态：发现新版本 {0}（当前 {1}），等待确认。",
+        ["status.updateCheckFailed"] = "状态：检查更新失败：{0}",
+        ["status.downloading"] = "状态：正在下载 {0}… {1}%",
+        ["status.updateReady"] = "状态：更新已下载，正在重启完成安装…",
+        ["status.updateFailed"] = "状态：更新失败：{0}",
+
+        ["update.size"] = "{0} MB",
+        ["update.sizeUnknown"] = "大小未知",
 
         ["progress.empty"] = "暂无启用的按键。",
         ["progress.itemMax"] = "{0}  本 {1}/{2} · 累 {3} · 下 {4}",
@@ -102,6 +115,10 @@ public static class UiText
         ["dialog.title"] = "九序",
         ["dialog.settingsIssue"] = "设置有问题",
         ["dialog.running.text"] = "九序已经在运行，已为你唤出窗口。",
+        ["dialog.update.title"] = "发现新版本",
+        ["dialog.update.text"] = "当前版本 {0}，最新版本 {1}（{2}）。\n\n是否立即下载并更新？\n更新只替换程序本体，NineFlow.ini 里的配置和累计进度会保留。更新完成后程序会自动重启。",
+        ["dialog.updateFailed.title"] = "更新失败",
+        ["dialog.updateFailed.text"] = "无法完成更新：\n{0}\n\n也可以到 GitHub Releases 页面手动下载最新版。",
 
         ["hotkey.empty"] = "{0}快捷键为空",
         ["hotkey.invalid"] = "{0}快捷键“{1}”无效：{2}",
@@ -133,6 +150,8 @@ public static class UiText
         ["tooltip.beep"] = "开始 / 停止时播放提示音。",
         ["tooltip.closeToTray"] = "点关闭按钮时隐藏到托盘继续运行，而不是退出程序。",
         ["tooltip.topMost"] = "让九序窗口始终显示在最前面。",
+        ["tooltip.update"] = "到 GitHub 检查有没有新版本；发现新版可一键下载，确认后自动替换并重启，配置与进度会保留。",
+        ["tooltip.autoUpdate"] = "启动 3 秒后自动检查一次；只有发现新版本才会提示，检查失败不会打扰。",
 
 
         ["note.read"] = "读取配置文件失败：{0}",
