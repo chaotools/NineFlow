@@ -31,6 +31,9 @@ public sealed class AppSettings
     /// <summary>启动后自动检查 GitHub 上的新版本。</summary>
     public bool AutoCheckUpdate { get; set; } = true;
 
+    /// <summary>桌面快捷方式已创建过（首次运行创建一次，之后不再重复）。</summary>
+    public bool ShortcutCreated { get; set; }
+
     /// <summary>读取配置过程中的提示信息（键名，由界面翻译）。</summary>
     public List<string> Notes { get; } = new();
 }
@@ -124,6 +127,7 @@ public sealed class SettingsStore
         settings.Beep = document.GetBoolOrNull("General", "Beep") ?? true;
         settings.TopMost = document.GetBoolOrNull("General", "TopMost") ?? false;
         settings.AutoCheckUpdate = document.GetBoolOrNull("General", "AutoCheckUpdate") ?? true;
+        settings.ShortcutCreated = document.GetBoolOrNull("App", "ShortcutCreated") ?? false;
 
         return settings;
     }
@@ -159,6 +163,7 @@ public sealed class SettingsStore
             document.Set("Hotkey", "On", settings.HotkeyOn ?? string.Empty);
             document.Set("Hotkey", "Off", settings.HotkeyOff ?? string.Empty);
             document.Set("Hotkey", "Reset", settings.HotkeyReset ?? string.Empty);
+            document.Set("App", "ShortcutCreated", settings.ShortcutCreated ? "1" : "0");
             document.Set("Skip", "Key", settings.SkipKey ?? string.Empty);
             document.Set("Skip", "Count", settings.SkipCount ?? string.Empty);
 

@@ -84,6 +84,7 @@ public static class UiText
         ["status.reset"] = "状态：进度已清零，下一轮将从第 1 项重新开始。",
         ["status.slotAdded"] = "状态：已添加一行，当前共 {0} 行。",
         ["status.slotRemoved"] = "状态：已删除一行，当前共 {0} 行。",
+        ["status.shortcutCreated"] = "状态：已在桌面创建快捷方式，以后点它启动即可。",
         ["status.resetWhileRunning"] = "状态：正在连点，不能重置进度。请先按 {0} 停止。",
         ["status.capturing"] = "状态：等待按键…直接按下要用的键，按 Esc 取消。",
         ["status.keyCaptured"] = "状态：已录入 {0}。也可以按 ^a / Ctrl+A 这类写法自己改。",

@@ -149,6 +149,18 @@ public sealed partial class MainForm : Form
             _store.SaveConfig(_settings, out _);
         }
 
+        // 首次运行静默创建桌面快捷方式；成功才写标记，失败的话下次启动会再试一次
+        bool shortcutCreated = false;
+        if (!_settings.ShortcutCreated && Environment.ProcessPath is { Length: > 0 } exePath)
+        {
+            shortcutCreated = DesktopShortcut.TryCreate(exePath);
+            if (shortcutCreated)
+            {
+                _settings.ShortcutCreated = true;
+                _store.SaveConfig(_settings, out _);
+            }
+        }
+
         _runCoordinator = new RunCoordinator(PersistProgress);
 
         _engine = new ClickEngine(new KeySender())
@@ -174,6 +186,10 @@ public sealed partial class MainForm : Form
         if (_settings.Notes.Count > 0)
         {
             SetStatus("note.read", Theme.Orange, UnwrapNote(_settings.Notes[0]));
+        }
+        else if (shortcutCreated)
+        {
+            SetStatus("status.shortcutCreated", Theme.Green);
         }
         else
         {

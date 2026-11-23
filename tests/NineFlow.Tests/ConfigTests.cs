@@ -102,6 +102,7 @@ internal static class SettingsStoreTests
             settings.HotkeyOn = "Ctrl+F7";
             settings.HotkeyReset = "F10";
             settings.SkipCount = "7";
+            settings.ShortcutCreated = true;
 
             Program.Check("保存配置成功", store.SaveConfig(settings, out string saveError), saveError);
             Program.Check("保存后文件存在", store.Exists);
@@ -115,6 +116,7 @@ internal static class SettingsStoreTests
             Program.Equal("读取启动热键", "Ctrl+F7", loaded.HotkeyOn);
             Program.Equal("读取重置热键", "F10", loaded.HotkeyReset);
             Program.Equal("读取跳过数", "7", loaded.SkipCount);
+            Program.Check("读取快捷方式标记", loaded.ShortcutCreated);
 
             // 3) 保存进度不应破坏其它配置
             List<SlotState> runtime = settings.Slots.Select(slot => slot.Clone()).ToList();
@@ -125,6 +127,12 @@ internal static class SettingsStoreTests
             Program.Equal("进度已更新", 40, afterProgress.Slots[0].Done);
             Program.Equal("进度保存后配置仍在", 5, afterProgress.Slots[1].MaxCount);
             Program.Equal("进度保存后热键仍在", "Ctrl+F7", afterProgress.HotkeyOn);
+            Program.Check("进度保存后快捷方式标记仍在", afterProgress.ShortcutCreated);
+
+            // 3.5) 只存选项也不该丢掉快捷方式标记
+            Program.Check("保存选项成功", store.SaveOptions(afterProgress, out string optionsError), optionsError);
+            AppSettings afterOptions = store.Load();
+            Program.Check("选项保存后快捷方式标记仍在", afterOptions.ShortcutCreated);
 
             // 4) 行数按需：3 行能存能读，删回 2 行后旧节被清理
             Program.Check("保存 3 行成功",
@@ -135,6 +143,7 @@ internal static class SettingsStoreTests
                 store.SaveConfig(new AppSettings { Slots = AppDefaults.CreateSlots(2) }, out string twoError), twoError);
             AppSettings afterRemove = store.Load();
             Program.Equal("删行后只剩 2 行", 2, afterRemove.Slots.Count);
+            Program.Check("全新配置快捷方式标记为 false", !afterRemove.ShortcutCreated);
             IniDocument raw = IniDocument.Load(path);
             Program.Equal("多余的 Slot3 已清理", null, raw.Get("Slot3", "Key"));
             Program.Equal("最少行数", 2, AppDefaults.MinSlots);
