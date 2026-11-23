@@ -96,6 +96,42 @@ public static class UpdateService
     public static bool DigestMatches(string expectedSha256, string actualSha256) =>
         string.Equals(expectedSha256, actualSha256, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// 校验下载完成的文件：SHA-256、大小、内部版本号。独立成纯函数便于单元测试。
+    /// 全部通过返回 true；否则返回 false 并在 error 中给出原因。
+    /// </summary>
+    public static bool TryValidateDownload(
+        UpdateRelease release,
+        long downloadedSize,
+        string actualSha256,
+        string? fileVersion,
+        out string error)
+    {
+        error = string.Empty;
+
+        // 发布信息里带摘要时，哈希必须一致；没带（旧发布）则退回大小 + 版本号校验
+        if (release.Sha256 is { Length: > 0 } expectedSha256 && !DigestMatches(expectedSha256, actualSha256))
+        {
+            error = "更新包 SHA-256 与发布信息不一致，已拒绝安装（文件可能被篡改或下载不完整）。";
+            return false;
+        }
+
+        if (release.Size > 0 && downloadedSize != release.Size)
+        {
+            error = $"下载大小与发布信息不一致（{downloadedSize} / {release.Size} 字节）。";
+            return false;
+        }
+
+        if (!Version.TryParse(fileVersion, out Version? parsed) ||
+            Normalize(parsed) < Normalize(release.Version))
+        {
+            error = "下载的文件不是预期版本，可能被替换或下载不完整。";
+            return false;
+        }
+
+        return true;
+    }
+
     /// <summary>只有 GitHub 的 HTTPS 地址才允许下载，避免被改成任意来源。</summary>
     public static bool IsTrustedDownloadUrl(Uri uri)
     {
@@ -178,6 +214,7 @@ public static class UpdateService
             Uri? downloadUrl = null;
             long size = 0;
             string? sha256 = null;
+            bool hasFallback = false;
 
             if (root.TryGetProperty("assets", out JsonElement assets) && assets.ValueKind == JsonValueKind.Array)
             {
@@ -188,7 +225,6 @@ public static class UpdateService
                         : string.Empty;
 
                     if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
-                    if (!name.StartsWith("NineFlow", StringComparison.OrdinalIgnoreCase)) continue;
 
                     string? url = asset.TryGetProperty("browser_download_url", out JsonElement urlElement)
                         ? urlElement.GetString()
@@ -212,14 +248,31 @@ public static class UpdateService
                         }
                     }
 
-                    assetName = name;
-                    downloadUrl = uri;
-                    sha256 = assetSha256;
-                    size = asset.TryGetProperty("size", out JsonElement sizeElement) &&
-                           sizeElement.TryGetInt64(out long parsedSize)
+                    long assetSize = asset.TryGetProperty("size", out JsonElement sizeElement) &&
+                                     sizeElement.TryGetInt64(out long parsedSize)
                         ? parsedSize
                         : 0;
-                    break;
+
+                    // 优先采用 NineFlow 命名的 exe（自动发布的约定），没有就退回任意 exe：
+                    // 手动发版把文件命名成「九序-1.2.0.exe」也不会让自动更新静默失效
+                    bool preferred = name.StartsWith("NineFlow", StringComparison.OrdinalIgnoreCase);
+                    if (preferred)
+                    {
+                        assetName = name;
+                        downloadUrl = uri;
+                        sha256 = assetSha256;
+                        size = assetSize;
+                        break;
+                    }
+
+                    if (!hasFallback)
+                    {
+                        hasFallback = true;
+                        assetName = name;
+                        downloadUrl = uri;
+                        sha256 = assetSha256;
+                        size = assetSize;
+                    }
                 }
             }
 
@@ -317,23 +370,11 @@ public static class UpdateService
             }
 
             long downloaded = new FileInfo(tempPath).Length;
+            string? fileVersion = FileVersionInfo.GetVersionInfo(tempPath).FileVersion;
 
-            if (release.Size > 0 && downloaded != release.Size)
+            if (!TryValidateDownload(release, downloaded, actualSha256, fileVersion, out string validationError))
             {
-                throw new InvalidOperationException($"下载大小与发布信息不一致（{downloaded} / {release.Size} 字节）。");
-            }
-
-            // 发布信息里带摘要时，哈希必须一致；没带（旧发布）则退回大小 + 版本号校验
-            if (release.Sha256 is { Length: > 0 } expectedSha256 && !DigestMatches(expectedSha256, actualSha256))
-            {
-                throw new InvalidOperationException("更新包 SHA-256 与发布信息不一致，已拒绝安装（文件可能被篡改或下载不完整）。");
-            }
-
-            FileVersionInfo info = FileVersionInfo.GetVersionInfo(tempPath);
-            if (!Version.TryParse(info.FileVersion, out Version? fileVersion) ||
-                Normalize(fileVersion) < Normalize(release.Version))
-            {
-                throw new InvalidOperationException("下载的文件不是预期版本，可能被替换或下载不完整。");
+                throw new InvalidOperationException(validationError);
             }
 
             File.Move(tempPath, destinationPath, overwrite: true);

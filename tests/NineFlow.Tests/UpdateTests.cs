@@ -100,6 +100,47 @@ internal static class UpdateTests
         Program.Check("摘要比较忽略大小写", UpdateService.DigestMatches(sampleDigest, sampleDigest.ToUpperInvariant()));
         Program.Check("摘要不同判为不一致", !UpdateService.DigestMatches(sampleDigest, sampleDigest[..63] + "0"));
 
+        UpdateCheckResult chineseAsset = UpdateService.ParseReleaseJson(
+            """
+            {"tag_name":"v1.1.7","draft":false,"prerelease":false,"assets":[{"name":"九序-1.1.7.exe","size":10,"browser_download_url":"https://github.com/chaotools/NineFlow/releases/download/v1.1.7/x.exe"}]}
+            """,
+            current);
+        Program.Check("非 NineFlow 命名的 exe 也能更新", chineseAsset.Status == UpdateCheckStatus.Available, chineseAsset.Status.ToString());
+        Program.Equal("回退选中第一个 exe", "九序-1.1.7.exe", chineseAsset.Release?.AssetName);
+
+        UpdateCheckResult preferNineFlow = UpdateService.ParseReleaseJson(
+            """
+            {"tag_name":"v1.1.7","draft":false,"prerelease":false,"assets":[{"name":"九序-1.1.7.exe","size":10,"browser_download_url":"https://github.com/chaotools/NineFlow/releases/download/v1.1.7/a.exe"},{"name":"NineFlow-v1.1.7.exe","size":11,"browser_download_url":"https://github.com/chaotools/NineFlow/releases/download/v1.1.7/b.exe"}]}
+            """,
+            current);
+        Program.Equal("优先选 NineFlow 命名", "NineFlow-v1.1.7.exe", preferNineFlow.Release?.AssetName);
+
+        var sampleRelease = new UpdateRelease(
+            new Version(1, 1, 7),
+            "v1.1.7",
+            "NineFlow-v1.1.7.exe",
+            new Uri("https://github.com/chaotools/NineFlow/releases/download/v1.1.7/x.exe"),
+            100,
+            null,
+            sampleDigest);
+
+        Program.Check("下载校验：全部匹配通过", UpdateService.TryValidateDownload(sampleRelease, 100, sampleDigest, "1.1.7.0", out _));
+        Program.Check(
+            "下载校验：大小不符被拒",
+            !UpdateService.TryValidateDownload(sampleRelease, 99, sampleDigest, "1.1.7.0", out string sizeError) && sizeError.Contains("大小"),
+            sizeError);
+        Program.Check(
+            "下载校验：摘要不符被拒",
+            !UpdateService.TryValidateDownload(sampleRelease, 100, new string('0', 64), "1.1.7.0", out string hashError) && hashError.Contains("SHA-256"),
+            hashError);
+        Program.Check(
+            "下载校验：版本过低被拒",
+            !UpdateService.TryValidateDownload(sampleRelease, 100, sampleDigest, "1.1.6.0", out string versionError) && versionError.Contains("版本"),
+            versionError);
+        Program.Check(
+            "下载校验：没有摘要的旧发布只校验大小和版本",
+            UpdateService.TryValidateDownload(sampleRelease with { Sha256 = null }, 100, "", "1.1.7.0", out _));
+
         UpdateCheckResult draft = UpdateService.ParseReleaseJson(
             """{"tag_name":"v1.1.6","draft":true,"prerelease":false,"assets":[]}""",
             current);

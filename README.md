@@ -146,7 +146,7 @@ dotnet build tests\NineFlow.Tests\NineFlow.Tests.csproj -c Release
 dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll
 ```
 
-- **366 项**单元 / 集成测试：INI 解析与往返、配置与界面选项、按键名映射、
+- **374 项**单元 / 集成测试：INI 解析与往返、配置与界面选项、按键名映射、
   组合按键解析、热键解析、连点调度与引擎、真实 `RegisterHotKey` + `WM_HOTKEY`、
   真实 `SendInput` 投递、0.02 秒发送频率；更新检查的 Release 解析、版本比较、
   下载地址校验与替换脚本。

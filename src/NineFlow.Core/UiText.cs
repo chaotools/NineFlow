@@ -84,6 +84,7 @@ public static class UiText
         ["status.downloading"] = "状态：正在下载 {0}… {1}%",
         ["status.updateReady"] = "状态：更新已下载，正在重启完成安装…",
         ["status.updateFailed"] = "状态：更新失败：{0}",
+        ["status.previousUpdateFailed"] = "状态：上次更新没有完成，可到 GitHub Releases 手动下载最新版覆盖。",
 
         ["update.size"] = "{0} MB",
         ["update.sizeUnknown"] = "大小未知",
