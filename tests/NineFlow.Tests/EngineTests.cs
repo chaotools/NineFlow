@@ -138,6 +138,11 @@ internal static class ClickSessionTests
         Program.Equal("间隔下限换算 10 毫秒", 10, new SlotState { Interval = 0.001 }.EffectivePeriodMs);
         Program.Equal("次数下限 0", 0, SlotState.ClampCount(-5));
 
+        // 5b) 回归：间隔填超大值时换算成毫秒不能 int 溢出（溢出后会被钳成 10 毫秒最高速连发）
+        Program.Equal("间隔上限 3600 秒", 3600.0, SlotState.ClampInterval(999999999));
+        Program.Equal("间隔超大值钳到上限", 3600.0, SlotState.ClampInterval(double.MaxValue));
+        Program.Equal("上限换算 3600000 毫秒", 3600000, new SlotState { Interval = 1e9 }.EffectivePeriodMs);
+
         // 6) 累计次数取最大值
         var doneSlots = new List<SlotState>
         {
@@ -277,7 +282,33 @@ internal static class ClickEngineTests
                 "累计=" + stopResult.Slots[0].Done);
         }
 
-        // 4) 参数校验
+        // 4) 回归：用户主动停止也必须派发 Stopped 事件——Stop() 3 秒超时拿不到结果时，
+        //    界面（按轮次判重）只能靠这个事件从「停止中」恢复
+        var userStopSender = new RecordingSender();
+        using (var userStopEngine = new ClickEngine(userStopSender, warmupMs: 0, skipDelayMs: 0))
+        {
+            var userStopped = new TaskCompletionSource<EngineStopResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            userStopEngine.Stopped += result => userStopped.TrySetResult(result);
+
+            var slots = new List<SlotState>
+            {
+                new() { Index = 1, Enabled = true, Key = "Down", Interval = 0.01, MaxCount = 0 },
+            };
+
+            Program.Check("用户停止场景可以启动", userStopEngine.Start(slots, "", 0, out _));
+            Thread.Sleep(100);
+
+            EngineStopResult? syncResult = userStopEngine.Stop();
+            Program.Check("等待用户停止事件", userStopped.Task.Wait(5000), "超时未收到事件");
+            Program.Equal("事件里的停止原因", StopReason.User, userStopped.Task.Result.Reason);
+            Program.Check(
+                "同步返回与事件是同一轮",
+                syncResult == null || syncResult.RunId == userStopped.Task.Result.RunId,
+                "sync=" + (syncResult?.RunId.ToString() ?? "null") +
+                " event=" + userStopped.Task.Result.RunId);
+        }
+
+        // 5) 参数校验
         var guardSender = new RecordingSender();
         using (var guardEngine = new ClickEngine(guardSender, warmupMs: 0, skipDelayMs: 0))
         {

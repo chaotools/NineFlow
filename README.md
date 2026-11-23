@@ -3,7 +3,7 @@
 [![build](https://github.com/chaotools/NineFlow/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/chaotools/NineFlow/actions/workflows/build.yml)
 [![release](https://img.shields.io/github/v/release/chaotools/NineFlow?sort=semver)](https://github.com/chaotools/NineFlow/releases/latest)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-455%20passed-brightgreen)](#6-测试)
+[![tests](https://img.shields.io/badge/tests-467%20passed-brightgreen)](#6-测试)
 [![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6)](#1-功能)
 
 > 徽章说明：`build` 来自 GitHub Actions，实时反映构建状态；`release` 由 shields.io 读取最新 Release，自动跟随版本；`license`、`tests`、`platform` 为静态徽章。
@@ -109,7 +109,7 @@ NineFlow\
 │     ├─ Theme.cs              配色、字体、圆角
 │     └─ Assets.cs             内嵌应用图标
 ├─ tests\
-│  ├─ NineFlow.Tests\          455 项逻辑测试（控制台运行，无第三方框架）
+│  ├─ NineFlow.Tests\          467 项逻辑测试（控制台运行，无第三方框架）
 │  └─ KeyCatcher\              测试辅助：全局键盘钩子记录按键
 ├─ tools\                      发布版 exe 的端到端测试与截图脚本
 └─ build.ps1                   一键构建
@@ -158,7 +158,7 @@ dotnet build tests\NineFlow.Tests\NineFlow.Tests.csproj -c Release
 dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll
 ```
 
-- **487 项**单元 / 集成测试：INI 解析与往返、配置与界面选项、按键名映射、
+- **499 项**单元 / 集成测试：INI 解析与往返、配置与界面选项、按键名映射、
   组合按键解析、热键解析、连点调度与引擎、启动校验与执行计划、运行结束的状态迁移、
   界面行解析、真实 `RegisterHotKey` + `WM_HOTKEY`、
   真实 `SendInput` 投递、0.02 秒发送频率；更新检查的 Release 解析、版本比较、
@@ -172,7 +172,7 @@ dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll
   - F7/F8 开始停止、F9 重置进度与进度保存
   - 关闭到托盘关闭时正常退出并保存进度
 - **`tools\verify-delivery.ps1`**：交付目录自检（启动、自建 ini、工作目录无关性、单实例）。
-- **CI**：推送到 `main` 时 GitHub Actions 在 Windows 上编译并运行 455 项逻辑测试（跳过需要真实桌面的 32 项集成测试），产物可在 Actions 页面下载。
+- **CI**：推送到 `main` 时 GitHub Actions 在 Windows 上编译并运行 467 项逻辑测试（跳过需要真实桌面的 32 项集成测试），产物可在 Actions 页面下载。
 
 ---
 

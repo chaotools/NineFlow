@@ -93,7 +93,7 @@ internal static class IntegrationTests
         var clock = Stopwatch.StartNew();
         while (captured == null && cancelled == null && clock.ElapsedMilliseconds < 3000) Application.DoEvents();
 
-        Program.Equal("注入 Ctrl+A 被录成 ^a", "^a", captured ?? (cancelled ?? "(没有事件)"));
+        Program.Equal("注入 Ctrl+A 被录成 ^A", "^A", captured ?? (cancelled ?? "(没有事件)"));
         Program.Check("捕获成功后自动卸钩子", !capture.IsCapturing);
 
         // 取消路径：Stop 之后必须立刻不再处于捕获状态，否则键盘会一直被吞

@@ -295,25 +295,26 @@ public sealed class ClickEngine : IDisposable
 
     private void Finish(int runId, EngineStopResult? result)
     {
-        // 先把终止结果登记下来，Stop() 才能在 Join 之后读到它——否则界面永远只会看到 User
-        if (result != null)
+        if (result == null)
         {
-            EngineStopResult terminal = result with { RunId = runId };
-            result = terminal;
+            // 用户主动停止也要派发事件：Stop() 3 秒超时返回 null 后，同步路径拿不到结果，
+            // 界面只能靠这个事件从「停止中」恢复。正常路径由调用方按轮次编号判重，不会重复处理。
+            result = new EngineStopResult(StopReason.User, null, _session?.Snapshot() ?? Array.Empty<SlotState>(), runId);
+        }
 
-            lock (_gate)
-            {
-                if (_runId == runId) _terminalResult = terminal;
-            }
+        // 先把终止结果登记下来，Stop() 才能在 Join 之后读到它——否则界面永远只会看到 User
+        EngineStopResult terminal = result with { RunId = runId };
+
+        lock (_gate)
+        {
+            if (_runId == runId) _terminalResult = terminal;
         }
 
         _running = false;
 
-        if (result == null) return;
-
         try
         {
-            Stopped?.Invoke(result);
+            Stopped?.Invoke(terminal);
         }
         catch
         {
