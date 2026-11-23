@@ -456,6 +456,7 @@ internal sealed class KeyField : AppTextField
     };
 
     private bool _chevronHot;
+    private ContextMenuStrip? _openMenu;
 
     public KeyField()
     {
@@ -523,12 +524,16 @@ internal sealed class KeyField : AppTextField
 
     private void ShowSuggestions()
     {
+        // 上一次的菜单可能还开着，先关掉，避免多个菜单叠在一起
+        _openMenu?.Close();
+
         var menu = new ContextMenuStrip
         {
             Font = Theme.Font(9.5f),
             ShowImageMargin = false,
             BackColor = Color.White,
         };
+        _openMenu = menu;
 
         // 第一项就是「按下要用的键」，让"按键可以自己定义"一眼可见，下面才是常用候选
         var capture = new ToolStripMenuItem(UiText.T("menu.captureKey"));
@@ -548,8 +553,47 @@ internal sealed class KeyField : AppTextField
             menu.Items.Add(item);
         }
 
-        menu.Closed += (_, _) => menu.Dispose();
+        menu.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_openMenu, menu)) _openMenu = null;
+            DisposeMenuLater(menu);
+        };
         menu.Show(this, new Point(0, Height + 2));
+    }
+
+    /// <summary>
+    /// 延后释放菜单。不能在 Closed 里同步 Dispose：Windows Forms 关闭菜单时，
+    /// ToolStripManager 的 ModalMenuFilter 还要继续拿它的 handle（SetVisibleCore），
+    /// 同步释放会抛 ObjectDisposedException——点空白处取消选择时必现。
+    /// </summary>
+    private void DisposeMenuLater(ContextMenuStrip menu)
+    {
+        if (!IsHandleCreated || IsDisposed)
+        {
+            menu.Dispose();
+            return;
+        }
+
+        try
+        {
+            BeginInvoke((Action)menu.Dispose);
+        }
+        catch (InvalidOperationException)
+        {
+            // 窗口正在销毁，句柄已不可用；直接释放即可
+            menu.Dispose();
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && _openMenu != null)
+        {
+            _openMenu.Dispose();
+            _openMenu = null;
+        }
+
+        base.Dispose(disposing);
     }
 }
 
