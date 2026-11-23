@@ -12,6 +12,7 @@ artifacts/
 
 # 运行时配置（含个人累计进度，不入库）
 NineFlow.ini
+NineFlow.ini.corrupt-*
 
 # 临时文件
 *.tmp

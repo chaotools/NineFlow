@@ -5,6 +5,26 @@
 
 ## [Unreleased]
 
+### 新增
+
+- 检查更新：底部新增「检查更新」按钮和「启动时检查更新」开关（默认开启，启动 3 秒后静默检查）。
+  发现新版本时弹框确认，同意后静默下载、校验文件大小与版本号、替换 exe 并自动重启；
+  `NineFlow.ini` 配置和累计进度保留。更新源为 GitHub Releases（`chaotools/NineFlow`），
+  只接受 GitHub 的 HTTPS 下载地址
+
+### 修复
+
+- 点按键输入框右侧 ▾ 打开候选菜单后不选、直接点别处关闭时弹出
+  `ObjectDisposedException: System.Windows.Forms.ContextMenuStrip`：菜单在 `Closed` 事件里同步
+  `Dispose()`，ToolStrip 关菜单时又要重建句柄；改为延后释放，并在窗口销毁时兜底
+- 配置文件损坏时直接按默认值重建，原内容（可能还能手工抢救）被覆盖；现在先备份为
+  `NineFlow.ini.corrupt-<时间>` 再重建
+- 关闭窗口时界面上的未保存改动可能丢失，退出前统一同步并保存
+
+### 变更
+
+- 新增配置项 `AutoCheckUpdate`（`[General]`，默认 `1`）
+
 ## [1.1.5] - 2026-11-22
 
 ### 新增

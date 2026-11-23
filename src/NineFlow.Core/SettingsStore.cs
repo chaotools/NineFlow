@@ -25,6 +25,9 @@ public sealed class AppSettings
     /// <summary>主窗口置顶。</summary>
     public bool TopMost { get; set; }
 
+    /// <summary>启动后自动检查 GitHub 上的新版本。</summary>
+    public bool AutoCheckUpdate { get; set; } = true;
+
     /// <summary>读取配置过程中的提示信息（键名，由界面翻译）。</summary>
     public List<string> Notes { get; } = new();
 }
@@ -104,6 +107,7 @@ public sealed class SettingsStore
         settings.CloseToTray = document.GetBoolOrNull("General", "CloseToTray") ?? true;
         settings.Beep = document.GetBoolOrNull("General", "Beep") ?? true;
         settings.TopMost = document.GetBoolOrNull("General", "TopMost") ?? false;
+        settings.AutoCheckUpdate = document.GetBoolOrNull("General", "AutoCheckUpdate") ?? true;
 
         return settings;
     }
@@ -170,6 +174,7 @@ public sealed class SettingsStore
         document.Set("General", "CloseToTray", settings.CloseToTray ? "1" : "0");
         document.Set("General", "Beep", settings.Beep ? "1" : "0");
         document.Set("General", "TopMost", settings.TopMost ? "1" : "0");
+        document.Set("General", "AutoCheckUpdate", settings.AutoCheckUpdate ? "1" : "0");
     }
 
     /// <summary>保存累计进度（只写各行的 Done，不碰其它配置）。</summary>
@@ -206,7 +211,25 @@ public sealed class SettingsStore
         }
         catch
         {
+            // 读取失败（文件损坏 / 编码异常）：先备份原文件再从空文档继续。
+            // 否则下一次保存——哪怕只是切个开关——会用空配置直接覆盖整个 ini，
+            // 全部槽位、热键和未知键一起丢掉。
+            TryBackupUnreadableFile();
             return new IniDocument();
+        }
+    }
+
+    /// <summary>把无法读取的配置文件备份成 NineFlow.ini.corrupt-时间戳，失败不阻塞保存。</summary>
+    private void TryBackupUnreadableFile()
+    {
+        try
+        {
+            string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+            File.Copy(Path, Path + ".corrupt-" + stamp, overwrite: true);
+        }
+        catch
+        {
+            // 备份失败也不阻塞保存：至少进度还能往下写
         }
     }
 
