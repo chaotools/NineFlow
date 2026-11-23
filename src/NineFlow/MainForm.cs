@@ -14,24 +14,28 @@ namespace NineFlow;
 /// </summary>
 public sealed partial class MainForm : Form
 {
-    private const int SlotCount = AppDefaults.SlotCount;
-
-    private const int DesignWidth = 1000;
-    private const int DesignHeight = 790;
+    private const int DesignWidth = 1120;
+    private const int DesignHeight = 720;
     private const int PageMargin = 24;
-    private const int CardWidth = DesignWidth - PageMargin * 2;
+    private const int CardGap = 16;
 
-    private const int Card1Y = 104;
-    private const int Card1H = 312;
-    private const int Card2Y = 428;
-    private const int Card2H = 148;
-    private const int ButtonsY = 588;
+    // 自定义顶栏已移除，标题与状态放在系统标题栏。保留这个常量作为布局起点偏移。
+    private const int HeaderH = 0;
+    private const int RunGap = 4;
+    private const int RunY = HeaderH + RunGap;
+    private const int RunH = 136;
+    private const int MiddleGap = 8;
+    private const int RightCardW = 336;
+    private const int MinClientW = 1040;
+    private const int MinClientH = 620;
     private const int ButtonH = 40;
-    private const int StatusY = 646;
-    private const int StatusH = 126;
+
+    private const int SlotRowHeight = 38;
+    private const int SlotRowsTop = 74;
 
     private const int HotkeyStartId = 0x4E46;
     private const int HotkeyStopId = 0x4E47;
+    private const int HotkeyResetId = 0x4E48;
 
     private readonly SettingsStore _store;
     private readonly ClickEngine _engine;
@@ -44,36 +48,56 @@ public sealed partial class MainForm : Form
     private ToolTip _toolTip = null!;
 
     private Panel _root = null!;
-    private HeaderPanel _header = null!;
+    private CardPanel _cardRun = null!;
     private CardPanel _cardSlots = null!;
     private CardPanel _cardHotkeys = null!;
-    private CardPanel _cardStatus = null!;
+    private CardPanel _cardSummary = null!;
+    private Panel _slotScroll = null!;
+    private Label _lblSlotsHint = null!;
 
-    private readonly AppSwitch[] _sw = new AppSwitch[SlotCount];
-    private readonly KeyField[] _keyFields = new KeyField[SlotCount];
-    private readonly AppTextField[] _intervalFields = new AppTextField[SlotCount];
-    private readonly AppTextField[] _countFields = new AppTextField[SlotCount];
+    /// <summary>顶部四个指标卡，窗口缩放时重新分布宽度。</summary>
+    private readonly List<Panel> _metricBoxes = new();
+
+    /// <summary>当前界面上实际存在的行；数量可增删，最少 2 行。</summary>
+    private readonly List<SlotRow> _rows = new();
+
+    /// <summary>重建行时暂时屏蔽 TextChanged 引发的重算。</summary>
+    private bool _rebuildingRows;
 
     private AppTextField _hotkeyOnField = null!;
     private AppTextField _hotkeyOffField = null!;
+    private AppTextField _hotkeyResetField = null!;
     private AppTextField _skipKeyField = null!;
     private AppTextField _skipCountField = null!;
     private Label _lblSkipAuto = null!;
 
-    private AppSwitch _swBeep = null!;
-    private AppSwitch _swCloseToTray = null!;
-    private AppSwitch _swTopMost = null!;
-    private AppSwitch _swAutoUpdate = null!;
+    // 次要操作与四个开关收进「设置」菜单，仍保留原有自动化 ID
+    private ToolStripMenuItem _miSave = null!;
+    private ToolStripMenuItem _miLoad = null!;
+    private ToolStripMenuItem _miUpdate = null!;
+    private ToolStripMenuItem _miBeep = null!;
+    private ToolStripMenuItem _miCloseToTray = null!;
+    private ToolStripMenuItem _miTopMost = null!;
+    private ToolStripMenuItem _miAutoUpdate = null!;
 
-    private AppButton _btnSave = null!;
-    private AppButton _btnLoad = null!;
+    private AppButton _btnMenu = null!;
+    private ContextMenuStrip _actionMenu = null!;
     private AppButton _btnStart = null!;
     private AppButton _btnStop = null!;
     private AppButton _btnReset = null!;
-    private AppButton _btnUpdate = null!;
+    private AppButton _btnAddSlot = null!;
+
+    private Label _lblTarget = null!;
+    private Label _lblMetricRound = null!;
+    private Label _lblMetricTotal = null!;
+    private Label _lblMetricNext = null!;
+    private Label _lblMetricSkip = null!;
 
     /// <summary>正在检查或下载更新，避免重复触发。</summary>
     private bool _updateBusy;
+
+    /// <summary>载入配置时只同步菜单勾选，不写回配置也不弹状态反馈。</summary>
+    private bool _suppressOptionFeedback;
 
     private Label _lblState = null!;
     private Label _lblProgress = null!;
@@ -89,8 +113,8 @@ public sealed partial class MainForm : Form
 
     private int _statusQueued;
 
-    /// <summary>已经处理过停止回调的那一轮编号；防止同一轮被 StopClicking 和 Stopped 处理两次。</summary>
-    private int _handledStopRun;
+    /// <summary>把「用户点停止」和「引擎自然结束」合并成一份状态迁移，并保证同一轮只处理一次。</summary>
+    private readonly RunCoordinator _runCoordinator;
 
     /// <summary>正在录键的行下标；-1 表示没在录。</summary>
     private int _captureIndex = -1;
@@ -125,6 +149,20 @@ public sealed partial class MainForm : Form
             _store.SaveConfig(_settings, out _);
         }
 
+        // 首次运行静默创建桌面快捷方式；成功才写标记，失败的话下次启动会再试一次
+        bool shortcutCreated = false;
+        if (!_settings.ShortcutCreated && Environment.ProcessPath is { Length: > 0 } exePath)
+        {
+            shortcutCreated = DesktopShortcut.TryCreate(exePath);
+            if (shortcutCreated)
+            {
+                _settings.ShortcutCreated = true;
+                _store.SaveConfig(_settings, out _);
+            }
+        }
+
+        _runCoordinator = new RunCoordinator(PersistProgress);
+
         _engine = new ClickEngine(new KeySender())
         {
             PrepareSendTarget = RestoreTargetFocus,
@@ -149,6 +187,10 @@ public sealed partial class MainForm : Form
         {
             SetStatus("note.read", Theme.Orange, UnwrapNote(_settings.Notes[0]));
         }
+        else if (shortcutCreated)
+        {
+            SetStatus("status.shortcutCreated", Theme.Green);
+        }
         else
         {
             SetIdleStatus(Theme.TextPrimary);
@@ -166,11 +208,12 @@ public sealed partial class MainForm : Form
         BackColor = Theme.Page;
         Font = Theme.Font(9f);
         StartPosition = FormStartPosition.CenterScreen;
-        FormBorderStyle = FormBorderStyle.FixedSingle;
-        MaximizeBox = false;
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MaximizeBox = true;
         AutoScaleMode = AutoScaleMode.Dpi;
         AutoScaleDimensions = new SizeF(96f, 96f);
         ClientSize = new Size(DesignWidth, DesignHeight);
+        MinimumSize = new Size(MinClientW + (Width - ClientSize.Width), MinClientH + (Height - ClientSize.Height));
         DoubleBuffered = true;
         SetStyle(ControlStyles.OptimizedDoubleBuffer, true);
 
@@ -189,19 +232,11 @@ public sealed partial class MainForm : Form
         };
         Controls.Add(_root);
 
-        _header = new HeaderPanel
-        {
-            Location = new Point(0, 0),
-            Size = new Size(DesignWidth, 92),
-            Logo = Assets.Logo,
-        };
-        _root.Controls.Add(_header);
-
-
+        BuildRunCard();
         BuildSlotsCard();
         BuildHotkeyCard();
-        BuildButtons();
-        BuildStatusCard();
+        BuildSummaryCard();
+        BuildMenu();
 
         // 统一挂 tooltip：此前 _tooltips 只收集不消费，除按钮外所有控件的提示都不生效
         foreach ((Control control, string key) in _tooltips)
@@ -209,6 +244,7 @@ public sealed partial class MainForm : Form
             _toolTip.SetToolTip(control, UiText.T(key));
         }
 
+        ApplyResponsiveLayout();
         ResumeLayout(true);
     }
 
@@ -216,85 +252,254 @@ public sealed partial class MainForm : Form
     {
         _cardSlots = new CardPanel
         {
-            Location = new Point(PageMargin, Card1Y),
-            Size = new Size(CardWidth, Card1H),
+            Location = new Point(PageMargin, HeaderH + RunGap + RunH + MiddleGap),
+            Size = new Size(DesignWidth - PageMargin * 2 - CardGap - RightCardW, 400),
         };
         _root.Controls.Add(_cardSlots);
 
-        AddLabel(_cardSlots, "card.slots.title", new Rectangle(24, 14, 320, 26), Theme.Font(12f, FontStyle.Bold), Theme.TextPrimary);
-        AddLabel(_cardSlots, "card.slots.hint", new Rectangle(360, 20, CardWidth - 360 - 24, 20), Theme.Font(8.5f), Theme.TextTertiary, ContentAlignment.MiddleRight);
+        AddLabel(_cardSlots, "card.slots.title", new Rectangle(18, 12, 220, 26), Theme.Font(12f, FontStyle.Bold), Theme.TextPrimary);
+        _lblSlotsHint = AddLabel(_cardSlots, "card.slots.hint",
+            new Rectangle(240, 14, _cardSlots.Width - 240 - 18, 22),
+            Theme.Font(8.5f), Theme.TextTertiary, ContentAlignment.MiddleRight);
 
-        for (int column = 0; column < 2; column++)
+        AddLabel(_cardSlots, "col.enabled", new Rectangle(20, 48, 32, 20), Theme.Font(8.5f), Theme.TextTertiary);
+        AddLabel(_cardSlots, "col.key", new Rectangle(54, 48, 176, 20), Theme.Font(8.5f), Theme.TextTertiary);
+        AddLabel(_cardSlots, "col.interval", new Rectangle(236, 48, 80, 20), Theme.Font(8.5f), Theme.TextTertiary);
+        AddLabel(_cardSlots, "col.count", new Rectangle(336, 48, 52, 20), Theme.Font(8.5f), Theme.TextTertiary);
+        AddLabel(_cardSlots, "col.progress", new Rectangle(394, 48, 100, 20), Theme.Font(8.5f), Theme.TextTertiary);
+
+        _slotScroll = new Panel
         {
-            int x = 24 + column * 452;
-            AddLabel(_cardSlots, "col.enabled", new Rectangle(x, 50, 58, 18), Theme.Font(8.5f), Theme.TextTertiary);
-            AddLabel(_cardSlots, "col.key", new Rectangle(x + 58, 50, 172, 18), Theme.Font(8.5f), Theme.TextTertiary);
-            AddLabel(_cardSlots, "col.interval", new Rectangle(x + 238, 50, 100, 18), Theme.Font(8.5f), Theme.TextTertiary);
-            AddLabel(_cardSlots, "col.count", new Rectangle(x + 346, 50, 60, 18), Theme.Font(8.5f), Theme.TextTertiary);
+            Location = new Point(18, SlotRowsTop),
+            Size = new Size(_cardSlots.Width - 36, 330),
+            BackColor = Theme.Card,
+            AutoScroll = true,
+        };
+        _cardSlots.Controls.Add(_slotScroll);
+
+        _btnAddSlot = new AppButton
+        {
+            Kind = AppButtonKind.Secondary,
+            Location = new Point(18, 414),
+            Size = new Size(120, 30),
+            Text = UiText.T("button.addSlot"),
+            Name = "button.addSlot",
+        };
+        _btnAddSlot.Click += (_, _) => AddSlotRow();
+        _cardSlots.Controls.Add(_btnAddSlot);
+        _tooltips.Add((_btnAddSlot, "tooltip.addSlot"));
+    }
+
+    /// <summary>界面上的一行。控件保持在列表里，删行时整行一起销毁并重新编号。</summary>
+    private sealed class SlotRow
+    {
+        public SlotRow(Panel panel, AppSwitch toggle, KeyField key, AppTextField interval,
+            AppTextField count, Label progress, AppButton remove)
+        {
+            Panel = panel;
+            Toggle = toggle;
+            Key = key;
+            Interval = interval;
+            Count = count;
+            Progress = progress;
+            Remove = remove;
         }
 
-        for (int i = 0; i < SlotCount; i++)
+        public Panel Panel { get; }
+        public AppSwitch Toggle { get; }
+        public KeyField Key { get; }
+        public AppTextField Interval { get; }
+        public AppTextField Count { get; }
+        public Label Progress { get; }
+        public AppButton Remove { get; }
+    }
+
+    private SlotRow CreateSlotRow(int index, SlotState slot)
+    {
+        var panel = new Panel
         {
-            int index = i;
-            int column = i / 5;
-            int row = i % 5;
-            int x = 24 + column * 452;
-            int y = 76 + row * 46;
+            Location = new Point(0, index * SlotRowHeight),
+            Size = new Size(Math.Max(560, _slotScroll.ClientSize.Width), SlotRowHeight),
+            BackColor = Theme.Card,
+        };
 
-            var toggle = new AppSwitch
+        var toggle = new AppSwitch
+        {
+            Location = new Point(2, 6),
+            SurfaceColor = Theme.Card,
+            Name = $"slot{index + 1}.enabled",
+            Checked = slot.Enabled,
+        };
+
+        var key = new KeyField
+        {
+            Location = new Point(52, 3),
+            Size = new Size(176, 32),
+            SurfaceColor = Theme.Card,
+            Name = $"slot{index + 1}.keybox",
+            Value = slot.Key ?? string.Empty,
+            Placeholder = UiText.T("row.placeholder"),
+        };
+        key.Editor.Name = $"slot{index + 1}.key";
+
+        var interval = new AppTextField
+        {
+            Location = new Point(236, 3),
+            Size = new Size(72, 32),
+            SurfaceColor = Theme.Card,
+            TextAlign = HorizontalAlignment.Center,
+            Value = FormatNumber(slot.Interval),
+        };
+        interval.Editor.Name = $"slot{index + 1}.interval";
+
+        var unit = AddLabel(panel, "unit.second", new Rectangle(310, 3, 24, 32),
+            Theme.Font(9f), Theme.TextTertiary, ContentAlignment.MiddleCenter, background: Theme.Card);
+
+        var count = new AppTextField
+        {
+            Location = new Point(336, 3),
+            Size = new Size(52, 32),
+            SurfaceColor = Theme.Card,
+            TextAlign = HorizontalAlignment.Center,
+            Value = slot.MaxCount.ToString(CultureInfo.InvariantCulture),
+            Placeholder = UiText.T("field.placeholder.count"),
+        };
+        count.Editor.Name = $"slot{index + 1}.max";
+
+        var progress = AddLabel(panel, null, new Rectangle(394, 3, 100, 32),
+            Theme.Font(9f), Theme.TextSecondary, ContentAlignment.MiddleLeft, background: Theme.Card);
+        progress.Name = $"slot{index + 1}.progress";
+
+        SlotRow? row = null;
+        var remove = new AppButton
+        {
+            Kind = AppButtonKind.Secondary,
+            Location = new Point(500, 5),
+            Size = new Size(30, 28),
+            Text = "−",
+            Name = $"button.removeSlot{index + 1}",
+        };
+        remove.Click += (_, _) => { if (row != null) RemoveSlotRow(row); };
+
+        row = new SlotRow(panel, toggle, key, interval, count, progress, remove);
+        foreach (Control control in new Control[] { toggle, key, interval, count, progress, remove, unit })
+        {
+            control.Tag = row;
+        }
+        panel.Controls.Add(toggle);
+        panel.Controls.Add(key);
+        panel.Controls.Add(interval);
+        panel.Controls.Add(unit);
+        panel.Controls.Add(count);
+        panel.Controls.Add(progress);
+        panel.Controls.Add(remove);
+
+        toggle.CheckedChanged += OnSlotControlChanged;
+        key.Editor.TextChanged += OnSlotControlChanged;
+        interval.Editor.TextChanged += OnSlotControlChanged;
+        count.Editor.TextChanged += OnSlotControlChanged;
+        key.CaptureRequested += (_, _) => BeginKeyCapture(index);
+
+        // 行会反复重建，不能塞进 BuildUi 末尾那次性处理的 _tooltips 列表
+        if (_toolTip != null)
+        {
+            _toolTip.SetToolTip(toggle, UiText.T("tooltip.enabled"));
+            _toolTip.SetToolTip(key, UiText.T("tooltip.key"));
+            _toolTip.SetToolTip(interval, UiText.T("tooltip.interval"));
+            _toolTip.SetToolTip(count, UiText.T("tooltip.count"));
+            _toolTip.SetToolTip(remove, UiText.T("tooltip.removeSlot"));
+        }
+
+        return row;
+    }
+
+    /// <summary>按给定配置重建所有行；增删行后行号与自动化 ID 会重新连续编号。</summary>
+    private void RebuildSlotRows(IReadOnlyList<SlotState> slots)
+    {
+        CancelKeyCapture(restoreValue: true);
+        _rebuildingRows = true;
+
+        foreach (SlotRow row in _rows)
+        {
+            if (_toolTip != null)
             {
-                Location = new Point(x, y + 3),
-                SurfaceColor = Theme.Card,
-                Name = $"slot{i + 1}.enabled",
-            };
-            toggle.CheckedChanged += (_, _) => OnSlotEnabledChanged(index);
-            _cardSlots.Controls.Add(toggle);
-            _tooltips.Add((toggle, "tooltip.enabled"));
+                _toolTip.SetToolTip(row.Toggle, null);
+                _toolTip.SetToolTip(row.Key, null);
+                _toolTip.SetToolTip(row.Interval, null);
+                _toolTip.SetToolTip(row.Count, null);
+                _toolTip.SetToolTip(row.Remove, null);
+            }
+            _slotScroll.Controls.Remove(row.Panel);
+            row.Panel.Dispose();
+        }
+        _rows.Clear();
 
-            var keyField = new KeyField
-            {
-                Location = new Point(x + 58, y),
-                Size = new Size(170, 32),
-                SurfaceColor = Theme.Card,
-                Name = $"slot{i + 1}.keybox",
-            };
-            keyField.Editor.Name = $"slot{i + 1}.key";
-            keyField.Editor.TextChanged += (_, _) => OnSlotFieldChanged();
-            keyField.CaptureRequested += (_, _) => BeginKeyCapture(index);
-            _cardSlots.Controls.Add(keyField);
-            _tooltips.Add((keyField, "tooltip.key"));
+        for (int i = 0; i < slots.Count; i++)
+        {
+            SlotRow row = CreateSlotRow(i, slots[i]);
+            _rows.Add(row);
+            _slotScroll.Controls.Add(row.Panel);
+            UpdateRowVisuals(i);
+        }
 
-            var intervalField = new AppTextField
-            {
-                Location = new Point(x + 238, y),
-                Size = new Size(76, 32),
-                SurfaceColor = Theme.Card,
-                TextAlign = HorizontalAlignment.Center,
-            };
-            intervalField.Editor.Name = $"slot{i + 1}.interval";
-            intervalField.Editor.TextChanged += (_, _) => OnSlotFieldChanged();
-            _cardSlots.Controls.Add(intervalField);
-            _tooltips.Add((intervalField, "tooltip.interval"));
+        _rebuildingRows = false;
+        UpdateAddRemoveButtons();
+        RefreshSummary();
+        UpdateAutoSkipLabel();
+    }
 
-            AddLabel(_cardSlots, "unit.second", new Rectangle(x + 318, y, 24, 32), Theme.Font(9f), Theme.TextTertiary, ContentAlignment.MiddleCenter);
+    private void AddSlotRow()
+    {
+        if (_closing || _engine.IsRunning || _rows.Count >= AppDefaults.MaxSlots) return;
 
-            var countField = new AppTextField
-            {
-                Location = new Point(x + 346, y),
-                Size = new Size(60, 32),
-                SurfaceColor = Theme.Card,
-                TextAlign = HorizontalAlignment.Center,
-                Placeholder = UiText.T("field.placeholder.count"),
-            };
-            countField.Editor.Name = $"slot{i + 1}.max";
-            countField.Editor.TextChanged += (_, _) => OnSlotFieldChanged();
-            _cardSlots.Controls.Add(countField);
-            _tooltips.Add((countField, "tooltip.count"));
+        SyncSettingsFromUi();
+        _settings.Slots.Add(AppDefaults.CreateBlankSlot(_settings.Slots.Count + 1));
+        RebuildSlotRows(_settings.Slots);
+        SetStatus("status.slotAdded", Theme.Green, _rows.Count);
+    }
 
-            _sw[i] = toggle;
-            _keyFields[i] = keyField;
-            _intervalFields[i] = intervalField;
-            _countFields[i] = countField;
+    private void RemoveSlotRow(SlotRow row)
+    {
+        if (_closing || _engine.IsRunning || _rows.Count <= AppDefaults.MinSlots) return;
+
+        int index = _rows.IndexOf(row);
+        if (index < 0) return;
+
+        SyncSettingsFromUi();
+        SlotState slot = _settings.Slots[index];
+        if (slot.Done > 0 &&
+            MessageBox.Show(this,
+                UiText.T("dialog.removeSlot.text", slot.Done),
+                UiText.T("dialog.removeSlot.title"),
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning) != DialogResult.Yes)
+        {
+            return;
+        }
+
+        _settings.Slots.RemoveAt(index);
+        RebuildSlotRows(_settings.Slots);
+        SetStatus("status.slotRemoved", Theme.Green, _rows.Count);
+    }
+
+    private SlotRow? FindSlotRow(Control? control)
+    {
+        while (control != null && control != _slotScroll)
+        {
+            if (control.Tag is SlotRow row) return row;
+            control = control.Parent;
+        }
+
+        return null;
+    }
+
+    private void UpdateAddRemoveButtons()
+    {
+        bool running = _engine.IsRunning;
+        _btnAddSlot.Enabled = !running && _rows.Count < AppDefaults.MaxSlots;
+        foreach (SlotRow row in _rows)
+        {
+            row.Remove.Enabled = !running && _rows.Count > AppDefaults.MinSlots;
         }
     }
 
@@ -302,65 +507,34 @@ public sealed partial class MainForm : Form
     {
         _cardHotkeys = new CardPanel
         {
-            Location = new Point(PageMargin, Card2Y),
-            Size = new Size(CardWidth, Card2H),
+            Location = new Point(DesignWidth - PageMargin - RightCardW, HeaderH + RunGap + RunH + MiddleGap),
+            Size = new Size(RightCardW, 196),
         };
         _root.Controls.Add(_cardHotkeys);
 
-        AddLabel(_cardHotkeys, "card.hotkeys.title", new Rectangle(24, 14, 320, 26), Theme.Font(12f, FontStyle.Bold), Theme.TextPrimary);
+        AddLabel(_cardHotkeys, "card.hotkeys.title", new Rectangle(18, 10, 200, 26), Theme.Font(12f, FontStyle.Bold), Theme.TextPrimary);
 
-        AddLabel(_cardHotkeys, "label.start", new Rectangle(24, 52, 40, 32), Theme.Font(9f), Theme.TextSecondary);
-        _hotkeyOnField = AddField(_cardHotkeys, "hotkey.start", new Rectangle(64, 52, 96, 32), "tooltip.hotkeyStart");
+        AddLabel(_cardHotkeys, "label.start", new Rectangle(18, 44, 36, 30), Theme.Font(9f), Theme.TextSecondary);
+        _hotkeyOnField = AddField(_cardHotkeys, "hotkey.start", new Rectangle(56, 44, 80, 30), "tooltip.hotkeyStart");
 
-        AddLabel(_cardHotkeys, "label.stop", new Rectangle(176, 52, 40, 32), Theme.Font(9f), Theme.TextSecondary);
-        _hotkeyOffField = AddField(_cardHotkeys, "hotkey.stop", new Rectangle(216, 52, 96, 32), "tooltip.hotkeyStop");
+        AddLabel(_cardHotkeys, "label.stop", new Rectangle(146, 44, 36, 30), Theme.Font(9f), Theme.TextSecondary);
+        _hotkeyOffField = AddField(_cardHotkeys, "hotkey.stop", new Rectangle(184, 44, 80, 30), "tooltip.hotkeyStop");
 
-        AddLabel(_cardHotkeys, "label.skipkey", new Rectangle(328, 52, 56, 32), Theme.Font(9f), Theme.TextSecondary);
-        _skipKeyField = AddField(_cardHotkeys, "hotkey.skipkey", new Rectangle(384, 52, 96, 32), "tooltip.skipKey");
+        AddLabel(_cardHotkeys, "label.reset", new Rectangle(18, 86, 36, 30), Theme.Font(9f), Theme.TextSecondary);
+        _hotkeyResetField = AddField(_cardHotkeys, "hotkey.reset", new Rectangle(56, 86, 80, 30), "tooltip.hotkeyReset");
 
-        AddLabel(_cardHotkeys, "label.skipcount", new Rectangle(496, 52, 56, 32), Theme.Font(9f), Theme.TextSecondary);
-        _skipCountField = AddField(_cardHotkeys, "hotkey.skipcount", new Rectangle(552, 52, 64, 32), "tooltip.skipCount");
+        AddLabel(_cardHotkeys, "label.skipkey", new Rectangle(146, 86, 52, 30), Theme.Font(9f), Theme.TextSecondary);
+        _skipKeyField = AddField(_cardHotkeys, "hotkey.skipkey", new Rectangle(202, 86, 100, 30), "tooltip.skipKey");
+
+        AddLabel(_cardHotkeys, "label.skipcount", new Rectangle(18, 128, 56, 30), Theme.Font(9f), Theme.TextSecondary);
+        _skipCountField = AddField(_cardHotkeys, "hotkey.skipcount", new Rectangle(76, 128, 80, 30), "tooltip.skipCount");
         _skipCountField.Editor.TextChanged += (_, _) =>
         {
             UpdateAutoSkipLabel();
             RefreshSummary();
         };
 
-        _lblSkipAuto = AddLabel(_cardHotkeys, null, new Rectangle(628, 52, CardWidth - 628 - 24, 32), Theme.Font(8.5f), Theme.TextTertiary);
-
-        // 第二行：三个开关
-        _swBeep = AddSwitch(_cardHotkeys, "switch.beep", 24, 96, 74, 70, out Label lblBeep, "tooltip.beep");
-        _swBeep.CheckedChanged += (_, _) =>
-        {
-            _settings.Beep = _swBeep.Checked;
-            SaveOptionsQuietly();
-        };
-        lblBeep.Click += (_, _) => _swBeep.Checked = !_swBeep.Checked;
-
-        _swCloseToTray = AddSwitch(_cardHotkeys, "switch.closeToTray", 180, 96, 230, 170, out Label lblTray, "tooltip.closeToTray");
-        _swCloseToTray.CheckedChanged += (_, _) =>
-        {
-            _settings.CloseToTray = _swCloseToTray.Checked;
-            SaveOptionsQuietly();
-        };
-        lblTray.Click += (_, _) => _swCloseToTray.Checked = !_swCloseToTray.Checked;
-
-        _swTopMost = AddSwitch(_cardHotkeys, "switch.topMost", 430, 96, 480, 110, out Label lblTop, "tooltip.topMost");
-        _swTopMost.CheckedChanged += (_, _) =>
-        {
-            _settings.TopMost = _swTopMost.Checked;
-            TopMost = _settings.TopMost;
-            SaveOptionsQuietly();
-        };
-        lblTop.Click += (_, _) => _swTopMost.Checked = !_swTopMost.Checked;
-
-        _swAutoUpdate = AddSwitch(_cardHotkeys, "switch.autoUpdate", 640, 96, 690, 170, out Label lblAutoUpdate, "tooltip.autoUpdate");
-        _swAutoUpdate.CheckedChanged += (_, _) =>
-        {
-            _settings.AutoCheckUpdate = _swAutoUpdate.Checked;
-            SaveOptionsQuietly();
-        };
-        lblAutoUpdate.Click += (_, _) => _swAutoUpdate.Checked = !_swAutoUpdate.Checked;
+        _lblSkipAuto = AddLabel(_cardHotkeys, null, new Rectangle(166, 128, RightCardW - 184, 30), Theme.Font(8.5f), Theme.TextTertiary);
     }
 
     private AppSwitch AddSwitch(Control parent, string labelKey, int x, int y, int labelX, int labelWidth, out Label label, string tooltipKey)
@@ -394,59 +568,156 @@ public sealed partial class MainForm : Form
         return field;
     }
 
-    private void BuildButtons()
+    private void BuildRunCard()
     {
-        _btnSave = AddButton("button.save", PageMargin, ButtonsY, 110, "tooltip.save", AppButtonKind.Secondary);
-        _btnLoad = AddButton("button.load", PageMargin + 122, ButtonsY, 110, "tooltip.load", AppButtonKind.Secondary);
-        _btnReset = AddButton("button.reset", PageMargin + 244, ButtonsY, 110, "tooltip.reset", AppButtonKind.Secondary);
-        _btnUpdate = AddButton("button.update", PageMargin + 366, ButtonsY, 110, "tooltip.update", AppButtonKind.Secondary);
+        _cardRun = new CardPanel
+        {
+            Location = new Point(PageMargin, RunY),
+            Size = new Size(DesignWidth - PageMargin * 2, RunH),
+        };
+        _root.Controls.Add(_cardRun);
 
-        _btnStop = AddButton("button.stop", DesignWidth - PageMargin - 132 - 12 - 120, ButtonsY, 120, "tooltip.stop", AppButtonKind.Danger);
-        _btnStart = AddButton("button.start", DesignWidth - PageMargin - 132, ButtonsY, 132, "tooltip.start", AppButtonKind.Primary);
+        _btnStart = AddButton(_cardRun, "button.start", 24, 9, 150, 38, "tooltip.start", AppButtonKind.Primary);
+        _btnStop = AddButton(_cardRun, "button.stop", 184, 9, 120, 38, "tooltip.stop", AppButtonKind.Danger);
+        _btnReset = AddButton(_cardRun, "button.reset", 314, 9, 110, 38, "tooltip.reset", AppButtonKind.Secondary);
+        _btnReset.Click += (_, _) => ResetProgress();
 
-        _btnSave.Click += (_, _) => SaveConfig();
-        _btnLoad.Click += (_, _) => LoadConfig();
+        _btnMenu = AddButton(_cardRun, "button.more", 880, 9, 90, 38, "tooltip.more", AppButtonKind.Secondary);
+        _btnMenu.Text = "设置 ▾";
         _btnStart.Click += (_, _) => StartClicking();
         _btnStop.Click += (_, _) => StopClicking();
-        _btnReset.Click += (_, _) => ResetProgress();
-        _btnUpdate.Click += async (_, _) => await CheckForUpdatesAsync(manual: true);
+        _btnMenu.Click += (_, _) =>
+        {
+            CancelKeyCapture(restoreValue: true);
+            _actionMenu.Show(_btnMenu, new Point(0, _btnMenu.Height + 2));
+        };
+
+        _lblState = AddLabel(_root, null, new Rectangle(PageMargin, DesignHeight - PageMargin - 24, DesignWidth - PageMargin * 2, 24), Theme.Font(10f, FontStyle.Bold), Theme.TextPrimary);
+        _lblState.Name = "status.state";
+
+        _lblTarget = AddLabel(_cardRun, null, new Rectangle(750, 9, 178, 38), Theme.Font(9f), Theme.TextSecondary, ContentAlignment.MiddleRight);
+        _lblTarget.Name = "status.target";
+
+        _lblMetricRound = AddMetric("metric.round", "metric.round", 24);
+        _lblMetricTotal = AddMetric("metric.total", "metric.total", 256);
+        _lblMetricNext = AddMetric("metric.next", "metric.next", 488);
+        _lblMetricSkip = AddMetric("metric.skip", "metric.skip", 720);
+
+        _lblProgress = AddLabel(_cardRun, null, new Rectangle(24, 106, DesignWidth - PageMargin * 2 - 48, 22), Theme.Font(8.5f), Theme.TextSecondary);
+        _lblProgress.Name = "status.progress";
     }
 
-    private AppButton AddButton(string key, int x, int y, int width, string tooltipKey, AppButtonKind kind)
+    private Label AddMetric(string labelKey, string name, int x)
+    {
+        var box = new Panel
+        {
+            Location = new Point(x, 53),
+            Size = new Size(220, 48),
+            BackColor = Theme.SecondaryFill,
+        };
+        _cardRun.Controls.Add(box);
+        _metricBoxes.Add(box);
+
+        AddLabel(box, labelKey, new Rectangle(12, 5, 196, 16), Theme.Font(8.5f), Theme.TextSecondary,
+            background: Theme.SecondaryFill);
+
+        var value = AddLabel(box, null, new Rectangle(12, 20, 196, 24), Theme.Font(14f, FontStyle.Bold), Theme.TextPrimary,
+            background: Theme.SecondaryFill);
+        value.Name = name;
+        return value;
+    }
+
+    private void BuildSummaryCard()
+    {
+        _cardSummary = new CardPanel
+        {
+            Location = new Point(DesignWidth - PageMargin - RightCardW, HeaderH + RunGap + RunH + MiddleGap + 204),
+            Size = new Size(RightCardW, 140),
+        };
+        _root.Controls.Add(_cardSummary);
+
+        AddLabel(_cardSummary, "card.summary.title", new Rectangle(18, 10, 200, 24), Theme.Font(12f, FontStyle.Bold), Theme.TextPrimary);
+
+        _lblSummary = AddLabel(_cardSummary, null, new Rectangle(18, 38, RightCardW - 36, 86), Theme.Font(9f), Theme.Accent);
+        _lblSummary.Name = "status.summary";
+    }
+
+    /// <summary>四个设置项放一级，各自的开关放二级；次要操作也在一级，保留原有自动化 ID。</summary>
+    private void BuildMenu()
+    {
+        _actionMenu = new ContextMenuStrip
+        {
+            Font = Theme.Font(9.5f),
+            ShowImageMargin = false,
+            BackColor = Color.White,
+        };
+
+        _miSave = AddMenuItem("button.save", SaveConfig);
+        _miLoad = AddMenuItem("button.load", LoadConfig);
+        _miUpdate = AddMenuItem("button.update", async () => await CheckForUpdatesAsync(manual: true));
+        _actionMenu.Items.Add(new ToolStripSeparator());
+
+        _miBeep = AddCheckGroup("switch.beep", on => { _settings.Beep = on; SaveOptionsQuietly(); });
+        _miCloseToTray = AddCheckGroup("switch.closeToTray", on => { _settings.CloseToTray = on; SaveOptionsQuietly(); });
+        _miTopMost = AddCheckGroup("switch.topMost", on =>
+        {
+            _settings.TopMost = on;
+            TopMost = _settings.TopMost;
+            SaveOptionsQuietly();
+        });
+        _miAutoUpdate = AddCheckGroup("switch.autoUpdate", on => { _settings.AutoCheckUpdate = on; SaveOptionsQuietly(); });
+    }
+
+    private ToolStripMenuItem AddMenuItem(string id, Action action)
+    {
+        var item = new ToolStripMenuItem(UiText.T(id)) { Name = id };
+        item.Click += (_, _) => action();
+        _actionMenu.Items.Add(item);
+        return item;
+    }
+
+    private ToolStripMenuItem AddCheckGroup(string id, Action<bool> onChanged)
+    {
+        string settingName = UiText.T(id);
+        var group = new ToolStripMenuItem(settingName + " ▸") { Name = id + ".group" };
+        _actionMenu.Items.Add(group);
+        if (group.DropDown is ToolStripDropDownMenu dropDown)
+        {
+            dropDown.Font = Theme.Font(9.5f);
+            dropDown.ShowImageMargin = false;
+            dropDown.ShowCheckMargin = true;
+            dropDown.BackColor = Color.White;
+        }
+
+        string label = UiText.T("menu.enable");
+        var item = new ToolStripMenuItem(label) { Name = id, CheckOnClick = true };
+        item.CheckedChanged += (_, _) =>
+        {
+            item.Text = (item.Checked ? "✓ " : "　 ") + label;
+            if (_suppressOptionFeedback) return;
+
+            onChanged(item.Checked);
+            SetStatus(item.Checked ? "status.optionOn" : "status.optionOff",
+                item.Checked ? Theme.Green : Theme.TextSecondary, settingName);
+        };
+        group.DropDown.Items.Add(item);
+        return item;
+    }
+
+    private AppButton AddButton(Control parent, string key, int x, int y, int width, int height, string tooltipKey, AppButtonKind kind)
     {
         var button = new AppButton
         {
             Kind = kind,
             Location = new Point(x, y),
-            Size = new Size(width, ButtonH),
+            Size = new Size(width, height),
             Name = "button." + key.Replace("button.", string.Empty),
         };
 
         button.Text = UiText.T(key);
-        _root.Controls.Add(button);
+        parent.Controls.Add(button);
         _tooltips.Add((button, tooltipKey));
         return button;
-    }
-
-    private void BuildStatusCard()
-    {
-        _cardStatus = new CardPanel
-        {
-            Location = new Point(PageMargin, StatusY),
-            Size = new Size(CardWidth, StatusH),
-        };
-        _root.Controls.Add(_cardStatus);
-
-        _lblState = AddLabel(_cardStatus, null, new Rectangle(24, 12, CardWidth - 48, 26), Theme.Font(10.5f, FontStyle.Bold), Theme.TextPrimary);
-        _lblState.Name = "status.state";
-
-        _lblProgress = AddLabel(_cardStatus, null, new Rectangle(24, 40, CardWidth - 48, 22), Theme.Font(9f), Theme.TextSecondary);
-        _lblProgress.Name = "status.progress";
-
-        _lblSummary = AddLabel(_cardStatus, null, new Rectangle(24, 64, CardWidth - 48, 22), Theme.Font(9f), Theme.Accent);
-        _lblSummary.Name = "status.summary";
-
-        AddLabel(_cardStatus, "hint.resume", new Rectangle(24, 90, CardWidth - 48, 20), Theme.Font(8.5f), Theme.TextTertiary);
     }
 
     private Label AddLabel(Control parent, string? key, Rectangle bounds, Font font, Color color, ContentAlignment alignment = ContentAlignment.MiddleLeft, Color? background = null)
@@ -612,19 +883,60 @@ public sealed partial class MainForm : Form
         base.WndProc(ref m);
     }
 
-    protected override void OnLoad(EventArgs e)
+    protected override void OnSizeChanged(EventArgs e)
     {
-        base.OnLoad(e);
+        base.OnSizeChanged(e);
+        ApplyResponsiveLayout();
+    }
 
-        // 小屏幕兜底：窗口比工作区还大时收缩，内容区可滚动，不会出现被裁掉/被遮挡
-        Rectangle workArea = Screen.FromControl(this).WorkingArea;
-        int maxWidth = Math.Max(600, workArea.Width - 40);
-        int maxHeight = Math.Max(400, workArea.Height - 80);
-        if (ClientSize.Width > maxWidth || ClientSize.Height > maxHeight)
+    /// <summary>按当前客户区重新摆放各卡片；右侧栏保持固定宽度，左侧列表吸收多余宽度。</summary>
+    private void ApplyResponsiveLayout()
+    {
+        if (_cardRun == null || _cardSlots == null || _cardHotkeys == null ||
+            _cardSummary == null || _slotScroll == null) return;
+
+        int width = Math.Max(MinClientW, ClientSize.Width);
+        int height = Math.Max(MinClientH, ClientSize.Height);
+        int contentW = width - PageMargin * 2;
+        int leftW = contentW - CardGap - RightCardW;
+        int rightX = PageMargin + leftW + CardGap;
+        int middleY = RunY + RunH + MiddleGap;
+        int statusY = height - PageMargin - 24;
+        int middleH = Math.Max(240, statusY - MiddleGap - middleY);
+
+        _cardRun.Bounds = new Rectangle(PageMargin, RunY, contentW, RunH);
+        int menuX = contentW - 24 - 90;
+        int targetW = 160;
+        int targetX = menuX - 8 - targetW;
+        _lblState.Bounds = new Rectangle(PageMargin, statusY, contentW, 24);
+        _lblTarget.Bounds = new Rectangle(targetX, 9, targetW, 38);
+        _btnMenu.Location = new Point(menuX, 9);
+
+        const int metricGap = 12;
+        int metricW = Math.Max(120, (contentW - 48 - metricGap * 3) / 4);
+        for (int i = 0; i < _metricBoxes.Count; i++)
         {
-            ClientSize = new Size(Math.Min(ClientSize.Width, maxWidth), Math.Min(ClientSize.Height, maxHeight));
-            _root.AutoScroll = true;
+            Panel box = _metricBoxes[i];
+            box.Bounds = new Rectangle(24 + i * (metricW + metricGap), 53, metricW, 48);
+            foreach (Control child in box.Controls) child.Width = Math.Max(40, box.Width - 24);
         }
+        _lblProgress.Bounds = new Rectangle(24, 106, contentW - 48, 22);
+
+        _cardSlots.Bounds = new Rectangle(PageMargin, middleY, leftW, middleH);
+        _lblSlotsHint.Width = Math.Max(120, leftW - 258);
+        _slotScroll.Bounds = new Rectangle(18, SlotRowsTop, leftW - 36,
+            Math.Max(80, middleH - SlotRowsTop - 46));
+        _btnAddSlot.Location = new Point(18, middleH - 38);
+
+        foreach (SlotRow row in _rows)
+        {
+            row.Panel.Width = Math.Max(560, _slotScroll.ClientSize.Width);
+            row.Remove.Left = row.Panel.Width - 38;
+            row.Progress.Width = Math.Max(40, row.Remove.Left - row.Progress.Left - 8);
+        }
+
+        _cardHotkeys.Bounds = new Rectangle(rightX, middleY, RightCardW, 196);
+        _cardSummary.Bounds = new Rectangle(rightX, middleY + 204, RightCardW, 140);
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
@@ -680,33 +992,33 @@ public sealed partial class MainForm : Form
 
     private string HotkeyOffText => NonEmptyOr(_hotkeyOffField.Value, AppDefaults.HotkeyOff);
 
+    private string HotkeyResetText => NonEmptyOr(_hotkeyResetField.Value, AppDefaults.HotkeyReset);
+
     private static string NonEmptyOr(string? text, string fallback) =>
         string.IsNullOrWhiteSpace(text) ? fallback : text.Trim();
 
     private void ApplySettings(AppSettings settings)
     {
-        List<SlotState> defaults = AppDefaults.CreateSlots();
-
-        for (int i = 0; i < SlotCount; i++)
+        // 极端情况下（手工改坏 ini）也要保证界面上至少有两行
+        while (settings.Slots.Count < AppDefaults.MinSlots)
         {
-            SlotState slot = i < settings.Slots.Count ? settings.Slots[i] : defaults[i];
-
-            _sw[i].Checked = slot.Enabled;
-            _keyFields[i].Value = slot.Key ?? string.Empty;
-            _intervalFields[i].Value = FormatNumber(slot.Interval);
-            _countFields[i].Value = slot.MaxCount.ToString(CultureInfo.InvariantCulture);
-            UpdateRowVisuals(i);
+            settings.Slots.Add(AppDefaults.CreateBlankSlot(settings.Slots.Count + 1));
         }
+
+        RebuildSlotRows(settings.Slots);
 
         _hotkeyOnField.Value = settings.HotkeyOn;
         _hotkeyOffField.Value = settings.HotkeyOff;
+        _hotkeyResetField.Value = settings.HotkeyReset;
         _skipKeyField.Value = settings.SkipKey;
         _skipCountField.Value = settings.SkipCount ?? string.Empty;
 
-        _swBeep.Checked = settings.Beep;
-        _swCloseToTray.Checked = settings.CloseToTray;
-        _swTopMost.Checked = settings.TopMost;
-        _swAutoUpdate.Checked = settings.AutoCheckUpdate;
+        _suppressOptionFeedback = true;
+        _miBeep.Checked = settings.Beep;
+        _miCloseToTray.Checked = settings.CloseToTray;
+        _miTopMost.Checked = settings.TopMost;
+        _miAutoUpdate.Checked = settings.AutoCheckUpdate;
+        _suppressOptionFeedback = false;
 
         UpdateAutoSkipLabel();
         RefreshSummary();
@@ -714,56 +1026,27 @@ public sealed partial class MainForm : Form
 
     private List<SlotState> ReadSlotsFromUi(List<string> errors, bool validate)
     {
-        var slots = new List<SlotState>(SlotCount);
-
-        for (int i = 0; i < SlotCount; i++)
+        var inputs = new List<SlotInput>(_rows.Count);
+        for (int i = 0; i < _rows.Count; i++)
         {
-            int index = i + 1;
-            SlotState previous = i < _settings.Slots.Count ? _settings.Slots[i] : new SlotState { Index = index };
+            SlotRow row = _rows[i];
+            SlotState previous = i < _settings.Slots.Count ? _settings.Slots[i] : new SlotState { Index = i + 1 };
 
-            var slot = new SlotState
-            {
-                Index = index,
-                Enabled = _sw[i].Checked,
-                Key = (_keyFields[i].Value ?? string.Empty).Trim(),
-                Done = previous.Done,
-                RunCount = previous.RunCount,
-            };
-
-            string intervalText = (_intervalFields[i].Value ?? string.Empty).Trim();
-            if (intervalText.Length == 0)
-            {
-                slot.Interval = 1.5;
-                if (validate && slot.Enabled) errors.Add(UiText.T("row.intervalEmpty", index));
-            }
-            else if (TryParseNumber(intervalText, out double interval))
-            {
-                slot.Interval = SlotState.ClampInterval(interval);
-            }
-            else
-            {
-                slot.Interval = 1.5;
-                if (validate && slot.Enabled) errors.Add(UiText.T("row.intervalInvalid", index, intervalText));
-            }
-
-            string countText = (_countFields[i].Value ?? string.Empty).Trim();
-            if (countText.Length == 0)
-            {
-                slot.MaxCount = 0;
-            }
-            else if (int.TryParse(countText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int maxCount))
-            {
-                slot.MaxCount = SlotState.ClampCount(maxCount);
-            }
-            else
-            {
-                slot.MaxCount = 0;
-                if (validate && slot.Enabled) errors.Add(UiText.T("row.countInvalid", index, countText));
-            }
-
-            slots.Add(slot);
+            inputs.Add(new SlotInput(
+                i + 1,
+                row.Toggle.Checked,
+                row.Key.Value,
+                row.Interval.Value,
+                row.Count.Value,
+                previous.Done,
+                previous.RunCount));
         }
 
+        // 解析与回退规则在 Core（SlotInputParser），界面只把控件值搬过去
+        var problems = new List<UiProblem>();
+        List<SlotState> slots = SlotInputParser.ParseAll(inputs, validate, problems);
+
+        foreach (UiProblem problem in problems) errors.Add(problem.Text);
         return slots;
     }
 
@@ -778,12 +1061,13 @@ public sealed partial class MainForm : Form
         _settings.Slots = ReadSlotsFromUi();
         _settings.HotkeyOn = _hotkeyOnField.Value.Trim();
         _settings.HotkeyOff = _hotkeyOffField.Value.Trim();
+        _settings.HotkeyReset = _hotkeyResetField.Value.Trim();
         _settings.SkipKey = _skipKeyField.Value.Trim();
         _settings.SkipCount = _skipCountField.Value.Trim();
-        _settings.Beep = _swBeep.Checked;
-        _settings.CloseToTray = _swCloseToTray.Checked;
-        _settings.TopMost = _swTopMost.Checked;
-        _settings.AutoCheckUpdate = _swAutoUpdate.Checked;
+        _settings.Beep = _miBeep.Checked;
+        _settings.CloseToTray = _miCloseToTray.Checked;
+        _settings.TopMost = _miTopMost.Checked;
+        _settings.AutoCheckUpdate = _miAutoUpdate.Checked;
     }
 
     private void SaveOptionsQuietly() => _store.SaveOptions(_settings, out _);
@@ -851,92 +1135,25 @@ public sealed partial class MainForm : Form
         List<SlotState> slots = ReadSlotsFromUi(errors, validate: true);
         if (ReportValidationErrors(errors)) return;
 
-        List<SlotState> active = slots.Where(slot => slot.IsActive).ToList();
-        if (active.Count == 0)
-        {
-            Beep(beepOn: true);
-            SetStatus("status.noActive", Theme.Orange, Array.Empty<object>());
-            return;
-        }
-
-        HotkeyDef? startHotkey = ParseHotkey(HotkeyOnText);
-        HotkeyDef? stopHotkey = ParseHotkey(HotkeyOffText);
-
-        // 先本地校验按键写法，报错信息才能跟随界面语言
-        foreach (SlotState slot in active)
-        {
-            if (!SendSpec.TryParse(slot.Key, out List<SendToken> tokens, out string keyError))
-            {
-                Beep(beepOn: true);
-                SetStatus("status.keyInvalid", Theme.Red, slot.Index, slot.Key, keyError);
-                return;
-            }
-
-            // 要发送的键如果和热键相同，这个键会被系统在输入流里先截走，
-            // 目标窗口永远收不到；撞上停止热键还会把正在跑的任务自己停掉。
-            if (stopHotkey != null && KeyConflict.Contains(tokens, stopHotkey))
-            {
-                Beep(beepOn: true);
-                SetStatus("status.blocked", Theme.Red, UiText.T("row.conflictStop", slot.Index, slot.Key, stopHotkey.Display));
-                return;
-            }
-
-            if (startHotkey != null && KeyConflict.Contains(tokens, startHotkey))
-            {
-                Beep(beepOn: true);
-                SetStatus("status.blocked", Theme.Red, UiText.T("row.conflictStart", slot.Index, slot.Key, startHotkey.Display));
-                return;
-            }
-        }
-
-        string skipKey = _skipKeyField.Value.Trim();
-        if (skipKey.Length > 0)
-        {
-            if (!SendSpec.TryParse(skipKey, out List<SendToken> skipTokens, out string skipError))
-            {
-                Beep(beepOn: true);
-                SetStatus("status.skipInvalid", Theme.Red, skipKey, skipError);
-                return;
-            }
-
-            if (stopHotkey != null && KeyConflict.Contains(skipTokens, stopHotkey))
-            {
-                Beep(beepOn: true);
-                SetStatus("status.blocked", Theme.Red, UiText.T("skip.conflictStop", skipKey, stopHotkey.Display));
-                return;
-            }
-
-            if (startHotkey != null && KeyConflict.Contains(skipTokens, startHotkey))
-            {
-                Beep(beepOn: true);
-                SetStatus("status.blocked", Theme.Red, UiText.T("skip.conflictStart", skipKey, startHotkey.Display));
-                return;
-            }
-        }
-
-        string skipCountText = _skipCountField.Value.Trim();
-        int skipCount;
-        if (skipCountText.Length == 0)
-        {
-            skipCount = ClickSession.AutoSkipCount(slots);
-        }
-        else if (int.TryParse(skipCountText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedSkip))
-        {
-            skipCount = Math.Max(0, parsedSkip);
-        }
-        else
-        {
-            Beep(beepOn: true);
-            SetStatus("status.badSkipCount", Theme.Orange, skipCountText);
-            return;
-        }
-
         // 确认有可用的目标窗口：按键总是发给前台窗口，如果九序自己在前台就没有意义
         IntPtr sendTarget = WindowsDesktop.ResolveSendTarget(_processId, Handle, _targetWindow);
-        if (sendTarget == IntPtr.Zero || WindowsDesktop.IsMinimized(sendTarget))
+        bool targetUsable = sendTarget != IntPtr.Zero && !WindowsDesktop.IsMinimized(sendTarget);
+
+        var request = new StartRequest(
+            slots,
+            StartHotkey: HotkeyOnText,
+            StopHotkey: HotkeyOffText,
+            SkipKey: _skipKeyField.Value,
+            SkipCount: _skipCountField.Value,
+            TargetUsable: targetUsable,
+            ResetHotkey: HotkeyResetText);
+
+        // 校验（按键写法、热键撞车、跳过键、跳过数、目标窗口）全在 Core 里，界面只负责渲染结果
+        StartPlan? plan = StartPlanner.TryCreate(request, out UiProblem? problem);
+        if (plan == null)
         {
             Beep(beepOn: true);
-            SetStatus("status.noTarget", Theme.Orange, HotkeyOnText);
+            ShowProblem(problem!);
             return;
         }
 
@@ -944,7 +1161,7 @@ public sealed partial class MainForm : Form
         // 旧热键已经被注销/替换，可能把原本能用的停止热键弄丢
         List<string> hotkeyProblems = RegisterHotkeys();
 
-        if (!_engine.Start(slots, skipKey, skipCount, out string startError))
+        if (!_engine.Start(plan, out string startError))
         {
             Beep(beepOn: true);
             SetStatus("status.error", Theme.Red, startError);
@@ -967,6 +1184,13 @@ public sealed partial class MainForm : Form
         RefreshSummary();
     }
 
+    /// <summary>把校验问题画到状态栏：待补齐的用橙色，确定不能跑的用红色。</summary>
+    private void ShowProblem(UiProblem problem)
+    {
+        Color color = problem.Severity == UiProblemSeverity.Warning ? Theme.Orange : Theme.Red;
+        SetStatus(problem.Key, color, problem.Args);
+    }
+
     private void StopClicking()
     {
         if (_closing) return;
@@ -987,36 +1211,11 @@ public sealed partial class MainForm : Form
 
         SetRunningState(false);
 
-        // 本轮自然结束时 Stopped 回调可能已经先处理过了，这里不重复播提示音 / 重复改状态
-        if (result.RunId <= _handledStopRun) return;
-        _handledStopRun = result.RunId;
+        // 本轮自然结束时 Stopped 回调可能已经先处理过了：判重由协调器统一负责
+        RunOutcome? outcome = _runCoordinator.Complete(result, HotkeyOnText);
+        if (outcome == null) return;
 
-        string? saveError = PersistProgress(result.Slots);
-        RenderProgress(result.Slots);
-        RefreshSummary();
-        UpdateAutoSkipLabel();
-        PlayStopSound();
-
-        switch (result.Reason)
-        {
-            case StopReason.Completed:
-                SetStatus("status.completed", Theme.Green, HotkeyOnText);
-                break;
-
-            // 之前把所有非「完成」的结果都当成用户停止，引擎报错会被静默吞掉
-            case StopReason.Error:
-                ReportEngineError(result);
-                break;
-
-            default:
-                SetStatus("status.stoppedNext", Theme.TextPrimary, HotkeyOnText);
-                break;
-        }
-
-        // 进度没写进磁盘比“已停止”更要紧，放在最后，免得被上面的状态覆盖
-        if (saveError != null) SetStatus("status.progressSaveFailed", Theme.Red, saveError);
-
-        UpdateTrayTexts();
+        ApplyRunOutcome(outcome);
     }
 
     private void ResetProgress()
@@ -1059,6 +1258,7 @@ public sealed partial class MainForm : Form
 
         RegisterHotkey(HotkeyStartId, _hotkeyOnField.Value, UiText.T("label.start"), StartClicking, problems);
         RegisterHotkey(HotkeyStopId, _hotkeyOffField.Value, UiText.T("label.stop"), StopClicking, problems);
+        RegisterHotkey(HotkeyResetId, _hotkeyResetField.Value, UiText.T("label.reset"), ResetProgress, problems);
 
         return problems;
     }
@@ -1090,9 +1290,6 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private static HotkeyDef? ParseHotkey(string text) =>
-        HotkeyDef.TryParse(text, out HotkeyDef? definition, out _) ? definition : null;
-
     /// <summary>
     /// 热键没注册上时的提醒。气泡在 Win10/11 可能被「专注助手 / 通知设置」静默丢掉，
     /// 所以状态栏同时留一条红字——只靠气泡是不够的。
@@ -1122,7 +1319,7 @@ public sealed partial class MainForm : Form
 
     private void BeginKeyCapture(int index)
     {
-        if (_closing || _engine.IsRunning) return;
+        if (_closing || _engine.IsRunning || index < 0 || index >= _rows.Count) return;
 
         // 同一时刻只录一个键：先把上一次（如果有）收干净
         CancelKeyCapture(restoreValue: true);
@@ -1134,11 +1331,11 @@ public sealed partial class MainForm : Form
         }
 
         _captureIndex = index;
-        _captureBackup = _keyFields[index].Value;
+        _captureBackup = _rows[index].Key.Value;
 
-        _btnUpdate.Enabled = false;
+        _miUpdate.Enabled = false;
 
-        KeyField field = _keyFields[index];
+        KeyField field = _rows[index].Key;
         field.Capturing = true;
         field.Placeholder = UiText.T("capture.hint");
         field.Value = string.Empty;
@@ -1151,14 +1348,22 @@ public sealed partial class MainForm : Form
     {
         if (_captureIndex < 0) return;
 
-        KeyField field = _keyFields[_captureIndex];
+        if (_captureIndex >= _rows.Count)
+        {
+            _captureIndex = -1;
+            _captureBackup = string.Empty;
+            _miUpdate.Enabled = !_engine.IsRunning && !_updateBusy;
+            return;
+        }
+
+        KeyField field = _rows[_captureIndex].Key;
         field.Capturing = false;
         field.Placeholder = UiText.T("row.placeholder");
         if (restoreValue) field.Value = _captureBackup;
 
         _captureIndex = -1;
         _captureBackup = string.Empty;
-        _btnUpdate.Enabled = !_engine.IsRunning && !_updateBusy;
+        _miUpdate.Enabled = !_engine.IsRunning && !_updateBusy;
     }
 
     /// <summary>主动放弃录键（开始连点、关闭窗口、换一行录）。</summary>
@@ -1181,10 +1386,10 @@ public sealed partial class MainForm : Form
         int index = _captureIndex;
         EndKeyCapture(restoreValue: false);
 
-        if (index < 0 || index >= SlotCount) return;
+        if (index < 0 || index >= _rows.Count) return;
 
-        _keyFields[index].Value = text;
-        _keyFields[index].Editor.SelectionStart = _keyFields[index].Editor.TextLength;
+        _rows[index].Key.Value = text;
+        _rows[index].Key.Editor.SelectionStart = _rows[index].Key.Editor.TextLength;
         SetStatus("status.keyCaptured", Theme.Green, text);
     }
 
@@ -1257,65 +1462,72 @@ public sealed partial class MainForm : Form
     {
         if (_closing) return;
         if (result.Reason == StopReason.User) return; // 主动停止已在 StopClicking 里同步处理
-        if (result.RunId <= _handledStopRun) return;  // 这一轮已经由 StopClicking 处理过了
-        _handledStopRun = result.RunId;
 
-        string? saveError = PersistProgress(result.Slots);
+        // 这一轮是否已经由 StopClicking 处理过，由协调器统一判重
+        RunOutcome? outcome = _runCoordinator.Complete(result, HotkeyOnText);
+        if (outcome == null) return;
+
         SetRunningState(false);
-        RenderProgress(result.Slots);
+        ApplyRunOutcome(outcome);
+    }
+
+    /// <summary>把一轮结束的结果画到界面上（进度、摘要、提示音、状态、错误框）。</summary>
+    private void ApplyRunOutcome(RunOutcome outcome)
+    {
+        RenderProgress(outcome.Slots);
         RefreshSummary();
         UpdateAutoSkipLabel();
         PlayStopSound();
 
-        switch (result.Reason)
+        Color color = outcome.Severity switch
         {
-            case StopReason.Completed:
-                SetStatus("status.completed", Theme.Green, HotkeyOnText);
-                break;
+            RunOutcomeSeverity.Success => Theme.Green,
+            RunOutcomeSeverity.Failure => Theme.Red,
+            _ => Theme.TextPrimary,
+        };
+        SetStatus(outcome.StatusKey, color, outcome.StatusArgs);
 
-            case StopReason.Error:
-                ReportEngineError(result);
-                break;
+        if (outcome.ShowErrorDialog)
+        {
+            MessageBox.Show(
+                this,
+                outcome.ErrorMessage ?? string.Empty,
+                UiText.T("dialog.title"),
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
         }
-
-        // 自然结束时进度也可能写盘失败，别静默丢掉
-        if (saveError != null) SetStatus("status.progressSaveFailed", Theme.Red, saveError);
 
         UpdateTrayTexts();
     }
 
-    /// <summary>引擎出错时统一报告：状态栏红字 + 提示框。</summary>
-    private void ReportEngineError(EngineStopResult result)
-    {
-        SetStatus("status.error", Theme.Red, result.Message ?? string.Empty);
-        MessageBox.Show(
-            this,
-            result.Message ?? string.Empty,
-            UiText.T("dialog.title"),
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Warning);
-    }
-
     // ---------------------------------------------------------------- 界面状态
+
+    /// <summary>自定义顶栏已移除，运行状态放到系统标题栏。</summary>
+    private void UpdateWindowTitle()
+    {
+        Text = UiText.T("app.name") + " · " +
+            UiText.T(_engine.IsRunning ? "pill.running" : "pill.stopped");
+    }
 
     private void SetRunningState(bool running)
     {
-        _header.Running = running;
+        UpdateWindowTitle();
 
         _btnStart.Enabled = !running;
         _btnStop.Enabled = running;
-        _btnSave.Enabled = !running;
-        _btnLoad.Enabled = !running;
+        _miSave.Enabled = !running;
+        _miLoad.Enabled = !running;
         _btnReset.Enabled = !running;
-        _btnUpdate.Enabled = !running && !_updateBusy;
+        _miUpdate.Enabled = !running && !_updateBusy;
 
-        for (int i = 0; i < SlotCount; i++)
+        foreach (SlotRow row in _rows)
         {
-            _sw[i].Enabled = !running;
-            _keyFields[i].Enabled = !running;
-            _intervalFields[i].Enabled = !running;
-            _countFields[i].Enabled = !running;
+            row.Toggle.Enabled = !running;
+            row.Key.Enabled = !running;
+            row.Interval.Enabled = !running;
+            row.Count.Enabled = !running;
         }
+        UpdateAddRemoveButtons();
 
         // 运行中禁用 ToolTip，避免提示窗口出现在前台抢走按键
         _toolTip.Active = !running;
@@ -1328,33 +1540,39 @@ public sealed partial class MainForm : Form
         UpdateTrayTexts();
     }
 
-    private void OnSlotEnabledChanged(int index)
+    private void OnSlotControlChanged(object? sender, EventArgs e)
     {
+        if (_rebuildingRows || _rows.Count == 0) return;
+
+        SlotRow? row = FindSlotRow(sender as Control);
+        if (row == null) return;
+
+        int index = _rows.IndexOf(row);
+        if (index < 0) return;
+
         UpdateRowVisuals(index);
         RefreshSummary();
         UpdateAutoSkipLabel();
         _cardSlots.Invalidate();
     }
 
-    private void OnSlotFieldChanged()
-    {
-        RefreshSummary();
-    }
-
     /// <summary>未勾选的行整体变浅，直观表示“这一行不会执行”。</summary>
     private void UpdateRowVisuals(int index)
     {
-        bool on = _sw[index].Checked;
+        if (index < 0 || index >= _rows.Count) return;
+
+        SlotRow row = _rows[index];
+        bool on = row.Toggle.Checked;
         Color surface = on ? Theme.Card : ColorTranslator.FromHtml("#FAFAFC");
         Color valueColor = on ? Theme.TextPrimary : Theme.TextTertiary;
 
-        _keyFields[index].SurfaceColor = surface;
-        _intervalFields[index].SurfaceColor = surface;
-        _countFields[index].SurfaceColor = surface;
+        row.Key.SurfaceColor = surface;
+        row.Interval.SurfaceColor = surface;
+        row.Count.SurfaceColor = surface;
 
-        _keyFields[index].ValueColor = valueColor;
-        _intervalFields[index].ValueColor = valueColor;
-        _countFields[index].ValueColor = valueColor;
+        row.Key.ValueColor = valueColor;
+        row.Interval.ValueColor = valueColor;
+        row.Count.ValueColor = valueColor;
     }
 
     private void SetStatus(string key, Color color, params object[] args)
@@ -1367,7 +1585,7 @@ public sealed partial class MainForm : Form
 
     private void SetIdleStatus(Color color)
     {
-        SetStatus("status.stopped", color, HotkeyOnText, HotkeyOffText);
+        SetStatus("status.stopped", color, HotkeyOnText, HotkeyOffText, HotkeyResetText);
     }
 
     private void RenderStatus()
@@ -1389,10 +1607,22 @@ public sealed partial class MainForm : Form
     private void RenderProgress(IReadOnlyList<SlotState> slots)
     {
         var parts = new List<string>();
+        var active = new List<SlotState>();
 
-        foreach (SlotState slot in slots)
+        for (int i = 0; i < slots.Count; i++)
         {
-            if (!slot.Enabled || string.IsNullOrWhiteSpace(slot.Key)) continue;
+            SlotState slot = slots[i];
+            bool isActive = slot.Enabled && !string.IsNullOrWhiteSpace(slot.Key);
+            if (isActive) active.Add(slot);
+
+            if (i < _rows.Count)
+            {
+                _rows[i].Progress.Text = slot.MaxCount > 0
+                    ? slot.RunCount + "/" + slot.MaxCount
+                    : (slot.RunCount > 0 ? slot.RunCount.ToString(CultureInfo.InvariantCulture) : "∞");
+            }
+
+            if (!isActive) continue;
 
             parts.Add(slot.MaxCount > 0
                 ? UiText.T("progress.itemMax", slot.Key, slot.RunCount, slot.MaxCount, slot.Done, slot.Done + 1)
@@ -1400,6 +1630,16 @@ public sealed partial class MainForm : Form
         }
 
         _lblProgress.Text = parts.Count == 0 ? UiText.T("progress.empty") : string.Join("    ", parts);
+
+        // 指标按「组合轮次」显示：Down + Enter 各 9 次 = 9 组，不是 18 次按键
+        ClickSession.ComboCounts combos = ClickSession.CountCombos(active);
+
+        _lblMetricRound.Text = combos.Infinite
+            ? combos.Run.ToString(CultureInfo.InvariantCulture) + " / ∞"
+            : combos.Run.ToString(CultureInfo.InvariantCulture) + " / " + combos.Max.ToString(CultureInfo.InvariantCulture);
+        _lblMetricTotal.Text = combos.Done.ToString(CultureInfo.InvariantCulture);
+        _lblMetricNext.Text = (combos.Done + 1).ToString(CultureInfo.InvariantCulture);
+        _lblMetricSkip.Text = ClickSession.AutoSkipCount(slots).ToString(CultureInfo.InvariantCulture);
     }
 
     /// <summary>“本次执行”摘要：把“哪些行会被执行、各发多少次、要跳过几项”讲清楚。</summary>
@@ -1409,6 +1649,16 @@ public sealed partial class MainForm : Form
 
         List<SlotState> slots = ReadSlotsFromUi();
         List<SlotState> active = slots.Where(slot => slot.IsActive).ToList();
+
+        bool targetReady = _targetWindow != IntPtr.Zero && WindowsDesktop.IsWindow(_targetWindow);
+        string targetText = targetReady
+            ? UiText.T("summary.target", ShortenTitle(_targetTitle))
+            : UiText.T("summary.targetNone");
+        if (_lblTarget != null)
+        {
+            _lblTarget.Text = UiText.T("label.target") + "：" +
+                (targetReady ? ShortenTitle(_targetTitle) : UiText.T("target.none"));
+        }
 
         if (active.Count == 0)
         {
@@ -1442,9 +1692,7 @@ public sealed partial class MainForm : Form
             text += " · " + UiText.T("summary.warnEmptyKey", string.Join(",", emptyChecked));
         }
 
-        text += " · " + (_targetWindow != IntPtr.Zero && WindowsDesktop.IsWindow(_targetWindow)
-            ? UiText.T("summary.target", ShortenTitle(_targetTitle))
-            : UiText.T("summary.targetNone"));
+        text += " · " + targetText;
 
         _lblSummary.Text = text;
     }
@@ -1588,10 +1836,4 @@ public sealed partial class MainForm : Form
     // ---------------------------------------------------------------- 小工具
 
     private static string FormatNumber(double value) => value.ToString("0.####", CultureInfo.InvariantCulture);
-
-    private static bool TryParseNumber(string text, out double value)
-    {
-        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)) return true;
-        return double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value);
-    }
 }

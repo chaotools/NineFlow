@@ -158,6 +158,31 @@ internal static class ClickSessionTests
         Program.Equal("自动跳过只统计启用的行", 5, ClickSession.AutoSkipCount(mixedDone));
         Program.Equal("全部行都停用时自动跳过为 0", 0, ClickSession.AutoSkipCount(disabled));
 
+        // 6c) 指标按组合轮次统计：Down + Enter 各 9 次 = 9 组，不是 18 次
+        var comboSlots = new List<SlotState>
+        {
+            new() { Index = 1, Enabled = true, Key = "Down", RunCount = 9, MaxCount = 9, Done = 18 },
+            new() { Index = 2, Enabled = true, Key = "Enter", RunCount = 9, MaxCount = 9, Done = 18 },
+        };
+        ClickSession.ComboCounts combos = ClickSession.CountCombos(comboSlots);
+        Program.Equal("组合本轮进度取最大值", 9, combos.Run);
+        Program.Equal("组合本轮总数取最大值", 9, combos.Max);
+        Program.Equal("组合累计取最大值", 18, combos.Done);
+        Program.Check("有限组合不是无限", !combos.Infinite);
+
+        var comboInfinite = new List<SlotState>
+        {
+            new() { Index = 1, Enabled = true, Key = "Down", RunCount = 3, MaxCount = 0, Done = 7 },
+            new() { Index = 2, Enabled = true, Key = "Enter", RunCount = 2, MaxCount = 9, Done = 7 },
+        };
+        ClickSession.ComboCounts infiniteCombos = ClickSession.CountCombos(comboInfinite);
+        Program.Check("任一行无限则组合无限", infiniteCombos.Infinite);
+        Program.Equal("无限组合本轮进度仍取最大值", 3, infiniteCombos.Run);
+
+        ClickSession.ComboCounts emptyCombos = ClickSession.CountCombos(disabled);
+        Program.Equal("没有启用行时组合进度为 0", 0, emptyCombos.Run);
+        Program.Equal("没有启用行时组合累计为 0", 0, emptyCombos.Done);
+
         // 7) 快照与时间推进：落后时不会爆发补发
         var burst = new List<SlotState>
         {

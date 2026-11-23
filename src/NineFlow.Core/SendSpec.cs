@@ -85,7 +85,7 @@ public static class SendSpec
                 return false;
             }
 
-            tokens.Add(SendToken.ForCharacter(s[0]));
+            tokens.Add(CreateSingleCharToken(s[0], 0));
             return true;
         }
 
@@ -374,7 +374,10 @@ public static class SendSpec
     /// </summary>
     private static SendToken CreateSingleCharToken(char c, uint mods)
     {
-        if (mods != 0 && (char.IsAsciiLetter(c) || char.IsAsciiDigit(c)))
+        // 录键输出的大写字母表示物理按键（R），不是“打出一个大写 R 字符”
+        bool physicalKey = (char.IsAsciiLetter(c) || char.IsAsciiDigit(c)) &&
+            (mods != 0 || (c >= 'A' && c <= 'Z'));
+        if (physicalKey)
         {
             if (KeyNames.TryGetVirtualKey(c.ToString(), out ushort vk, out bool extended))
             {

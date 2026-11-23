@@ -11,6 +11,11 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        // WinForms 在 EnableVisualStyles 时会在 %TEMP% 创建激活上下文文件。
+        // 某些受限环境 / 安全软件会拦住这个过程（表现为普通启动没反应、提权却正常），
+        // 先把进程内的临时目录指到 exe 旁边，避免依赖系统 TEMP。
+        RedirectTempToAppDirectory();
+
         using var mutex = new Mutex(initiallyOwned: true, name: MutexName, out bool createdNew);
 
         if (!createdNew)
@@ -29,6 +34,24 @@ internal static class Program
         Application.Run(new MainForm(showEvent));
 
         GC.KeepAlive(mutex);
+    }
+
+    /// <summary>把当前进程的临时目录改到 exe 同目录的 .temp，失败时保持原样。</summary>
+    private static void RedirectTempToAppDirectory()
+    {
+        try
+        {
+            string directory = Path.Combine(AppContext.BaseDirectory, ".temp");
+            Directory.CreateDirectory(directory);
+
+            Environment.SetEnvironmentVariable("TMP", directory);
+            Environment.SetEnvironmentVariable("TEMP", directory);
+            Environment.SetEnvironmentVariable("TMPDIR", directory);
+        }
+        catch
+        {
+            // 目录不可写时继续走系统默认 TEMP，由后面的异常兜底提示
+        }
     }
 
     /// <summary>已经有实例在运行：让它把窗口唤到前台，然后自己退出。</summary>

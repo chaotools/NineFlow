@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 
 namespace NineFlow.Core;
 
@@ -36,7 +37,7 @@ public sealed class ClickEngine : IDisposable
     private readonly object _gate = new();
 
     private ClickSession? _session;
-    private List<SendToken>[]? _tokens;
+    private IReadOnlyList<SendToken>[]? _tokens;
     private List<SendToken>? _skipTokens;
     private int _skipCount;
     private Thread? _thread;
@@ -73,9 +74,10 @@ public sealed class ClickEngine : IDisposable
     /// <summary>切完焦点后给系统留出的稳定时间（毫秒）。</summary>
     public int PrepareSettleMs { get; set; } = 140;
 
-    /// <summary>开始一轮连发。</summary>
-    public bool Start(IEnumerable<SlotState> slots, string skipKey, int skipCount, out string error)
+    /// <summary>开始一轮连发。计划里的按键已经解析过，引擎不再二次解析。</summary>
+    public bool Start(StartPlan plan, out string error)
     {
+        ArgumentNullException.ThrowIfNull(plan);
         error = string.Empty;
 
         lock (_gate)
@@ -86,42 +88,16 @@ public sealed class ClickEngine : IDisposable
                 return false;
             }
 
-            List<SlotState> active = slots.Where(s => s.IsActive).Select(s => s.Clone()).ToList();
-            if (active.Count == 0)
+            if (plan.ActiveCount == 0)
             {
-                error = "没有启用任何按键：请至少勾选一行并填写组合按键。";
+                error = UiText.T("status.noActive");
                 return false;
             }
 
-            var tokenCache = new List<SendToken>[active.Count];
-            for (int i = 0; i < active.Count; i++)
-            {
-                if (!SendSpec.TryParse(active[i].Key, out List<SendToken> parsed, out string keyError))
-                {
-                    error = $"第 {active[i].Index} 行按键“{active[i].Key}”无效：{keyError}";
-                    return false;
-                }
-
-                tokenCache[i] = parsed;
-            }
-
-            List<SendToken>? skipTokens = null;
-            int effectiveSkip = Math.Max(0, skipCount);
-            if (!string.IsNullOrWhiteSpace(skipKey) && effectiveSkip > 0)
-            {
-                if (!SendSpec.TryParse(skipKey, out List<SendToken> parsedSkip, out string skipError))
-                {
-                    error = $"跳过键“{skipKey}”无效：{skipError}";
-                    return false;
-                }
-
-                skipTokens = parsedSkip;
-            }
-
-            _session = new ClickSession(active);
-            _tokens = tokenCache;
-            _skipTokens = skipTokens;
-            _skipCount = effectiveSkip;
+            _session = new ClickSession(plan.Slots);
+            _tokens = plan.Tokens;
+            _skipTokens = plan.SkipTokens?.ToList();
+            _skipCount = plan.SkipCount;
             _stopRequested = false;
             _terminalResult = null;
             int runId = ++_runId;
@@ -137,6 +113,29 @@ public sealed class ClickEngine : IDisposable
             thread.Start();
             return true;
         }
+    }
+
+    /// <summary>
+    /// 便捷重载：先走 <see cref="StartPlanner"/> 把原始输入校验成计划，再启动。
+    /// 界面走 <see cref="Start(StartPlan, out string)"/>，这个重载主要服务测试与脚本。
+    /// </summary>
+    public bool Start(IEnumerable<SlotState> slots, string skipKey, int skipCount, out string error)
+    {
+        ArgumentNullException.ThrowIfNull(slots);
+
+        StartPlan? plan = StartPlanner.TryCreate(
+            new StartRequest(
+                slots.ToList(),
+                SkipKey: skipCount > 0 ? skipKey : string.Empty,
+                SkipCount: Math.Max(0, skipCount).ToString(CultureInfo.InvariantCulture)),
+            out UiProblem? problem);
+        if (plan == null)
+        {
+            error = problem?.Text ?? UiText.T("status.noActive");
+            return false;
+        }
+
+        return Start(plan, out error);
     }
 
     /// <summary>
@@ -186,7 +185,7 @@ public sealed class ClickEngine : IDisposable
     private void RunLoop(int runId)
     {
         ClickSession session = _session!;
-        List<SendToken>[] tokens = _tokens!;
+        IReadOnlyList<SendToken>[] tokens = _tokens!;
 
         try
         {

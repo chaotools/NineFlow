@@ -11,6 +11,9 @@ public sealed class AppSettings
 
     public string HotkeyOff { get; set; } = AppDefaults.HotkeyOff;
 
+    /// <summary>重置进度的全局快捷键。</summary>
+    public string HotkeyReset { get; set; } = AppDefaults.HotkeyReset;
+
     public string SkipKey { get; set; } = AppDefaults.SkipKey;
 
     /// <summary>跳过数，空 = 自动取累计次数。</summary>
@@ -27,6 +30,9 @@ public sealed class AppSettings
 
     /// <summary>启动后自动检查 GitHub 上的新版本。</summary>
     public bool AutoCheckUpdate { get; set; } = true;
+
+    /// <summary>桌面快捷方式已创建过（首次运行创建一次，之后不再重复）。</summary>
+    public bool ShortcutCreated { get; set; }
 
     /// <summary>读取配置过程中的提示信息（键名，由界面翻译）。</summary>
     public List<string> Notes { get; } = new();
@@ -67,7 +73,19 @@ public sealed class SettingsStore
             return settings;
         }
 
-        for (int index = 1; index <= AppDefaults.SlotCount; index++)
+        // 行数由文件里实际存在的 SlotN 决定：旧配置有 10 行就读出 10 行，
+        // 新配置只有 2 行就只读 2 行；至少保留 MinSlots 行。
+        int maxSlot = 0;
+        foreach (IniSection section in document.Sections)
+        {
+            if (!section.Name.StartsWith("Slot", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!int.TryParse(section.Name.AsSpan(4), out int number) || number <= 0) continue;
+            if (number > maxSlot) maxSlot = number;
+        }
+
+        settings.Slots = AppDefaults.CreateSlots(Math.Max(AppDefaults.MinSlots, maxSlot));
+
+        for (int index = 1; index <= settings.Slots.Count; index++)
         {
             SlotState slot = settings.Slots[index - 1];
             string section = "Slot" + index.ToString(CultureInfo.InvariantCulture);
@@ -101,6 +119,7 @@ public sealed class SettingsStore
 
         settings.HotkeyOn = NonEmpty(document.Get("Hotkey", "On")) ?? AppDefaults.HotkeyOn;
         settings.HotkeyOff = NonEmpty(document.Get("Hotkey", "Off")) ?? AppDefaults.HotkeyOff;
+        settings.HotkeyReset = NonEmpty(document.Get("Hotkey", "Reset")) ?? AppDefaults.HotkeyReset;
         settings.SkipKey = document.Get("Skip", "Key") ?? AppDefaults.SkipKey;
         settings.SkipCount = document.Get("Skip", "Count") ?? string.Empty;
 
@@ -108,6 +127,7 @@ public sealed class SettingsStore
         settings.Beep = document.GetBoolOrNull("General", "Beep") ?? true;
         settings.TopMost = document.GetBoolOrNull("General", "TopMost") ?? false;
         settings.AutoCheckUpdate = document.GetBoolOrNull("General", "AutoCheckUpdate") ?? true;
+        settings.ShortcutCreated = document.GetBoolOrNull("App", "ShortcutCreated") ?? false;
 
         return settings;
     }
@@ -119,12 +139,13 @@ public sealed class SettingsStore
         {
             IniDocument document = LoadForUpdate();
 
-            for (int index = 1; index <= AppDefaults.SlotCount; index++)
-            {
-                SlotState slot = index <= settings.Slots.Count
-                    ? settings.Slots[index - 1]
-                    : AppDefaults.CreateSlots()[index - 1];
+            int count = Math.Max(AppDefaults.MinSlots, settings.Slots.Count);
+            var all = new List<SlotState>(settings.Slots);
+            while (all.Count < count) all.Add(AppDefaults.CreateBlankSlot(all.Count + 1));
 
+            for (int index = 1; index <= count; index++)
+            {
+                SlotState slot = all[index - 1];
                 string section = "Slot" + index.ToString(CultureInfo.InvariantCulture);
                 document.Set(section, "Enabled", slot.Enabled ? "1" : "0");
                 document.Set(section, "Key", slot.Key ?? string.Empty);
@@ -133,8 +154,16 @@ public sealed class SettingsStore
                 document.Set(section, "Done", slot.Done.ToString(CultureInfo.InvariantCulture));
             }
 
+            // 删行后清掉多余的 SlotN，否则下次读取又会把删掉的行变回来
+            for (int stale = count + 1; stale <= MaxSlotNumber(document); stale++)
+            {
+                document.RemoveSection("Slot" + stale.ToString(CultureInfo.InvariantCulture));
+            }
+
             document.Set("Hotkey", "On", settings.HotkeyOn ?? string.Empty);
             document.Set("Hotkey", "Off", settings.HotkeyOff ?? string.Empty);
+            document.Set("Hotkey", "Reset", settings.HotkeyReset ?? string.Empty);
+            document.Set("App", "ShortcutCreated", settings.ShortcutCreated ? "1" : "0");
             document.Set("Skip", "Key", settings.SkipKey ?? string.Empty);
             document.Set("Skip", "Count", settings.SkipCount ?? string.Empty);
 
@@ -184,10 +213,12 @@ public sealed class SettingsStore
         {
             IniDocument document = LoadForUpdate();
 
-            foreach (SlotState slot in slots)
+            // 按列表位置写，而不是 slot.Index：删行后行号会整体上移，
+            // 用旧 Index 会把进度写回已经不存在的节。
+            for (int i = 0; i < slots.Count; i++)
             {
-                string section = "Slot" + slot.Index.ToString(CultureInfo.InvariantCulture);
-                document.Set(section, "Done", Math.Max(0, slot.Done).ToString(CultureInfo.InvariantCulture));
+                string section = "Slot" + (i + 1).ToString(CultureInfo.InvariantCulture);
+                document.Set(section, "Done", Math.Max(0, slots[i].Done).ToString(CultureInfo.InvariantCulture));
             }
 
             document.Save(Path);
@@ -231,6 +262,20 @@ public sealed class SettingsStore
         {
             // 备份失败也不阻塞保存：至少进度还能往下写
         }
+    }
+
+    /// <summary>配置文件里最大的 SlotN 编号，用来清理删掉的行留下的旧节。</summary>
+    private static int MaxSlotNumber(IniDocument document)
+    {
+        int max = 0;
+        foreach (IniSection section in document.Sections)
+        {
+            if (!section.Name.StartsWith("Slot", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!int.TryParse(section.Name.AsSpan(4), out int number) || number <= 0) continue;
+            if (number > max) max = number;
+        }
+
+        return max;
     }
 
     private static string? NonEmpty(string? text) =>

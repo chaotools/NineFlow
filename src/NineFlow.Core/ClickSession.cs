@@ -134,4 +134,23 @@ public sealed class ClickSession
     /// 已停用的行带着历史进度一起参与取最大值，会把跳过数撑大，从而多跳过还没处理的项目。
     /// </summary>
     public static int AutoSkipCount(IEnumerable<SlotState> slots) => MaxDone(slots.Where(slot => slot.IsActive));
+
+    /// <summary>按「组合轮次」统计进度，而不是把每一行的按键次数相加。</summary>
+    public readonly record struct ComboCounts(int Run, int Max, bool Infinite, int Done);
+
+    /// <summary>
+    /// 一组 = 所有启用行各发一次。比如 Down ×9 + Enter ×9 是 9 组、18 次按键。
+    /// 同一轮内取活动行的最大值：行数不同时，以发得最多的那一行作为组合轮次。
+    /// </summary>
+    public static ComboCounts CountCombos(IEnumerable<SlotState> activeSlots)
+    {
+        var slots = activeSlots.Where(slot => slot.IsActive).ToList();
+        if (slots.Count == 0) return new ComboCounts(0, 0, false, 0);
+
+        return new ComboCounts(
+            Run: slots.Max(slot => slot.RunCount),
+            Max: slots.Max(slot => slot.MaxCount > 0 ? slot.MaxCount : 0),
+            Infinite: slots.Any(slot => slot.MaxCount == 0),
+            Done: slots.Max(slot => slot.Done));
+    }
 }
