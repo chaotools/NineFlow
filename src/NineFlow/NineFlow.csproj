@@ -19,12 +19,12 @@
     <AssemblyTitle>九序</AssemblyTitle>
     <Product>九序</Product>
     <Description>九序 · 多键连发 · 智能续点 · 转发助手</Description>
-    <AssemblyInformationalVersion>九序 1.1.5 (NineFlow)</AssemblyInformationalVersion>
+    <AssemblyInformationalVersion>九序 1.1.6 (NineFlow)</AssemblyInformationalVersion>
     <Company>NineFlow</Company>
     <Copyright>Copyright © 2026 NineFlow</Copyright>
-    <Version>1.1.5</Version>
-    <FileVersion>1.1.5.0</FileVersion>
-    <AssemblyVersion>1.1.5.0</AssemblyVersion>
+    <Version>1.1.6</Version>
+    <FileVersion>1.1.6.0</FileVersion>
+    <AssemblyVersion>1.1.6.0</AssemblyVersion>
     <NeutralLanguage>zh-CN</NeutralLanguage>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <ErrorReport>none</ErrorReport>
