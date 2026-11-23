@@ -3,7 +3,7 @@
 [![build](https://github.com/chaotools/NineFlow/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/chaotools/NineFlow/actions/workflows/build.yml)
 [![release](https://img.shields.io/github/v/release/chaotools/NineFlow?sort=semver)](https://github.com/chaotools/NineFlow/releases/latest)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-325%20passed-brightgreen)](#6-测试)
+[![tests](https://img.shields.io/badge/tests-424%20passed-brightgreen)](#6-测试)
 [![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6)](#1-功能)
 
 > 徽章说明：`build` 来自 GitHub Actions，实时反映构建状态；`release` 由 shields.io 读取最新 Release，自动跟随版本；`license`、`tests`、`platform` 为静态徽章。
@@ -89,6 +89,10 @@ NineFlow\
 │  │  ├─ HotkeyRegistry.cs     RegisterHotKey 注册与 WM_HOTKEY 分发
 │  │  ├─ ClickSession.cs       连点调度纯逻辑
 │  │  ├─ ClickEngine.cs        后台线程 + 高精度计时 + 跳过 + 发送前回调
+│  │  ├─ StartPlan.cs          启动请求 / 执行计划 / 可渲染的校验问题
+│  │  ├─ StartPlanner.cs       启动校验（按键、热键撞车、跳过键、目标窗口）
+│  │  ├─ RunCoordinator.cs     一轮结束的状态迁移（完成 / 出错 / 用户停止）
+│  │  ├─ SlotInputParser.cs    界面行文本 → SlotState 的回退与钳制规则
 │  │  ├─ WindowsDesktop.cs     前台窗口 / 目标窗口工具
 │  │  ├─ UpdateService.cs      检查 GitHub Release / 下载并校验更新包
 │  │  ├─ UpdateInstaller.cs    退出后替换 exe 并重启的脚本
@@ -102,7 +106,7 @@ NineFlow\
 │     ├─ Theme.cs              配色、字体、圆角
 │     └─ Assets.cs             内嵌图标与 Logo
 ├─ tests\
-│  ├─ NineFlow.Tests\          342 项逻辑测试（控制台运行，无第三方框架）
+│  ├─ NineFlow.Tests\          424 项逻辑测试（控制台运行，无第三方框架）
 │  └─ KeyCatcher\              测试辅助：全局键盘钩子记录按键
 ├─ tools\                      发布版 exe 的端到端测试与截图脚本
 └─ build.ps1                   一键构建
@@ -115,6 +119,11 @@ NineFlow\
 **分层**：`NineFlow.Core` 不引用 WinForms，只含 P/Invoke 与纯逻辑，
 因此可以在控制台里直接测试真实的全局热键注册与真实 SendInput 按键投递。
 界面层只负责读写控件、调用引擎、合并刷新状态。
+
+**界面不判业务**：启动校验（`StartPlanner`）、一轮结束的状态迁移（`RunCoordinator`）、
+界面行文本的解析与回退（`SlotInputParser`）都在 Core 里，主窗口只负责渲染结果。
+所以「哪些输入会被拒绝」「完成 / 出错 / 用户停止分别显示什么」这类规则可以脱离窗口做单元测试，
+不需要 UI 自动化。
 
 **调度精度**：`ClickEngine` 用独立线程调度，每个槽位维护自己的“下次到期时间”，
 启动时调用 `timeBeginPeriod(1)` 提升系统计时精度；落后时不会补发爆发，
@@ -146,8 +155,9 @@ dotnet build tests\NineFlow.Tests\NineFlow.Tests.csproj -c Release
 dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll
 ```
 
-- **374 项**单元 / 集成测试：INI 解析与往返、配置与界面选项、按键名映射、
-  组合按键解析、热键解析、连点调度与引擎、真实 `RegisterHotKey` + `WM_HOTKEY`、
+- **456 项**单元 / 集成测试：INI 解析与往返、配置与界面选项、按键名映射、
+  组合按键解析、热键解析、连点调度与引擎、启动校验与执行计划、运行结束的状态迁移、
+  界面行解析、真实 `RegisterHotKey` + `WM_HOTKEY`、
   真实 `SendInput` 投递、0.02 秒发送频率；更新检查的 Release 解析、版本比较、
   下载地址校验与替换脚本。
 - **42 项**对发布版 exe 的端到端测试（`tools\e2e-v2.ps1`，UI 自动化驱动真实窗口 +
@@ -159,7 +169,7 @@ dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll
   - F7/F8 开始停止与进度保存
   - 关闭到托盘关闭时正常退出并保存进度
 - **`tools\verify-delivery.ps1`**：交付目录自检（启动、自建 ini、工作目录无关性、单实例）。
-- **CI**：推送到 `main` 时 GitHub Actions 在 Windows 上编译并运行 342 项逻辑测试（跳过需要真实桌面的 32 项集成测试），产物可在 Actions 页面下载。
+- **CI**：推送到 `main` 时 GitHub Actions 在 Windows 上编译并运行 424 项逻辑测试（跳过需要真实桌面的 32 项集成测试），产物可在 Actions 页面下载。
 
 ---
 

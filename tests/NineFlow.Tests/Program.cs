@@ -29,6 +29,9 @@ internal static class Program
         RunGroup("AppSettingsOptions", AppSettingsOptionsTests.Run);
         RunGroup("ClickSession", ClickSessionTests.Run);
         RunGroup("ClickEngine", ClickEngineTests.Run);
+        RunGroup("StartPlanner", StartPlannerTests.Run);
+        RunGroup("RunCoordinator", RunCoordinatorTests.Run);
+        RunGroup("SlotInput", SlotInputTests.Run);
         RunGroup("KeyCapture", KeyCaptureTests.Run);
         RunGroup("KeyConflict", KeyConflictTests.Run);
         RunGroup("Update", UpdateTests.Run);

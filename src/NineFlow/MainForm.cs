@@ -89,8 +89,8 @@ public sealed partial class MainForm : Form
 
     private int _statusQueued;
 
-    /// <summary>已经处理过停止回调的那一轮编号；防止同一轮被 StopClicking 和 Stopped 处理两次。</summary>
-    private int _handledStopRun;
+    /// <summary>把「用户点停止」和「引擎自然结束」合并成一份状态迁移，并保证同一轮只处理一次。</summary>
+    private readonly RunCoordinator _runCoordinator;
 
     /// <summary>正在录键的行下标；-1 表示没在录。</summary>
     private int _captureIndex = -1;
@@ -124,6 +124,8 @@ public sealed partial class MainForm : Form
         {
             _store.SaveConfig(_settings, out _);
         }
+
+        _runCoordinator = new RunCoordinator(PersistProgress);
 
         _engine = new ClickEngine(new KeySender())
         {
@@ -714,56 +716,26 @@ public sealed partial class MainForm : Form
 
     private List<SlotState> ReadSlotsFromUi(List<string> errors, bool validate)
     {
-        var slots = new List<SlotState>(SlotCount);
-
+        var inputs = new List<SlotInput>(SlotCount);
         for (int i = 0; i < SlotCount; i++)
         {
-            int index = i + 1;
-            SlotState previous = i < _settings.Slots.Count ? _settings.Slots[i] : new SlotState { Index = index };
+            SlotState previous = i < _settings.Slots.Count ? _settings.Slots[i] : new SlotState { Index = i + 1 };
 
-            var slot = new SlotState
-            {
-                Index = index,
-                Enabled = _sw[i].Checked,
-                Key = (_keyFields[i].Value ?? string.Empty).Trim(),
-                Done = previous.Done,
-                RunCount = previous.RunCount,
-            };
-
-            string intervalText = (_intervalFields[i].Value ?? string.Empty).Trim();
-            if (intervalText.Length == 0)
-            {
-                slot.Interval = 1.5;
-                if (validate && slot.Enabled) errors.Add(UiText.T("row.intervalEmpty", index));
-            }
-            else if (TryParseNumber(intervalText, out double interval))
-            {
-                slot.Interval = SlotState.ClampInterval(interval);
-            }
-            else
-            {
-                slot.Interval = 1.5;
-                if (validate && slot.Enabled) errors.Add(UiText.T("row.intervalInvalid", index, intervalText));
-            }
-
-            string countText = (_countFields[i].Value ?? string.Empty).Trim();
-            if (countText.Length == 0)
-            {
-                slot.MaxCount = 0;
-            }
-            else if (int.TryParse(countText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int maxCount))
-            {
-                slot.MaxCount = SlotState.ClampCount(maxCount);
-            }
-            else
-            {
-                slot.MaxCount = 0;
-                if (validate && slot.Enabled) errors.Add(UiText.T("row.countInvalid", index, countText));
-            }
-
-            slots.Add(slot);
+            inputs.Add(new SlotInput(
+                i + 1,
+                _sw[i].Checked,
+                _keyFields[i].Value,
+                _intervalFields[i].Value,
+                _countFields[i].Value,
+                previous.Done,
+                previous.RunCount));
         }
 
+        // 解析与回退规则在 Core（SlotInputParser），界面只把控件值搬过去
+        var problems = new List<UiProblem>();
+        List<SlotState> slots = SlotInputParser.ParseAll(inputs, validate, problems);
+
+        foreach (UiProblem problem in problems) errors.Add(problem.Text);
         return slots;
     }
 
@@ -851,92 +823,24 @@ public sealed partial class MainForm : Form
         List<SlotState> slots = ReadSlotsFromUi(errors, validate: true);
         if (ReportValidationErrors(errors)) return;
 
-        List<SlotState> active = slots.Where(slot => slot.IsActive).ToList();
-        if (active.Count == 0)
-        {
-            Beep(beepOn: true);
-            SetStatus("status.noActive", Theme.Orange, Array.Empty<object>());
-            return;
-        }
-
-        HotkeyDef? startHotkey = ParseHotkey(HotkeyOnText);
-        HotkeyDef? stopHotkey = ParseHotkey(HotkeyOffText);
-
-        // 先本地校验按键写法，报错信息才能跟随界面语言
-        foreach (SlotState slot in active)
-        {
-            if (!SendSpec.TryParse(slot.Key, out List<SendToken> tokens, out string keyError))
-            {
-                Beep(beepOn: true);
-                SetStatus("status.keyInvalid", Theme.Red, slot.Index, slot.Key, keyError);
-                return;
-            }
-
-            // 要发送的键如果和热键相同，这个键会被系统在输入流里先截走，
-            // 目标窗口永远收不到；撞上停止热键还会把正在跑的任务自己停掉。
-            if (stopHotkey != null && KeyConflict.Contains(tokens, stopHotkey))
-            {
-                Beep(beepOn: true);
-                SetStatus("status.blocked", Theme.Red, UiText.T("row.conflictStop", slot.Index, slot.Key, stopHotkey.Display));
-                return;
-            }
-
-            if (startHotkey != null && KeyConflict.Contains(tokens, startHotkey))
-            {
-                Beep(beepOn: true);
-                SetStatus("status.blocked", Theme.Red, UiText.T("row.conflictStart", slot.Index, slot.Key, startHotkey.Display));
-                return;
-            }
-        }
-
-        string skipKey = _skipKeyField.Value.Trim();
-        if (skipKey.Length > 0)
-        {
-            if (!SendSpec.TryParse(skipKey, out List<SendToken> skipTokens, out string skipError))
-            {
-                Beep(beepOn: true);
-                SetStatus("status.skipInvalid", Theme.Red, skipKey, skipError);
-                return;
-            }
-
-            if (stopHotkey != null && KeyConflict.Contains(skipTokens, stopHotkey))
-            {
-                Beep(beepOn: true);
-                SetStatus("status.blocked", Theme.Red, UiText.T("skip.conflictStop", skipKey, stopHotkey.Display));
-                return;
-            }
-
-            if (startHotkey != null && KeyConflict.Contains(skipTokens, startHotkey))
-            {
-                Beep(beepOn: true);
-                SetStatus("status.blocked", Theme.Red, UiText.T("skip.conflictStart", skipKey, startHotkey.Display));
-                return;
-            }
-        }
-
-        string skipCountText = _skipCountField.Value.Trim();
-        int skipCount;
-        if (skipCountText.Length == 0)
-        {
-            skipCount = ClickSession.AutoSkipCount(slots);
-        }
-        else if (int.TryParse(skipCountText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedSkip))
-        {
-            skipCount = Math.Max(0, parsedSkip);
-        }
-        else
-        {
-            Beep(beepOn: true);
-            SetStatus("status.badSkipCount", Theme.Orange, skipCountText);
-            return;
-        }
-
         // 确认有可用的目标窗口：按键总是发给前台窗口，如果九序自己在前台就没有意义
         IntPtr sendTarget = WindowsDesktop.ResolveSendTarget(_processId, Handle, _targetWindow);
-        if (sendTarget == IntPtr.Zero || WindowsDesktop.IsMinimized(sendTarget))
+        bool targetUsable = sendTarget != IntPtr.Zero && !WindowsDesktop.IsMinimized(sendTarget);
+
+        var request = new StartRequest(
+            slots,
+            StartHotkey: HotkeyOnText,
+            StopHotkey: HotkeyOffText,
+            SkipKey: _skipKeyField.Value,
+            SkipCount: _skipCountField.Value,
+            TargetUsable: targetUsable);
+
+        // 校验（按键写法、热键撞车、跳过键、跳过数、目标窗口）全在 Core 里，界面只负责渲染结果
+        StartPlan? plan = StartPlanner.TryCreate(request, out UiProblem? problem);
+        if (plan == null)
         {
             Beep(beepOn: true);
-            SetStatus("status.noTarget", Theme.Orange, HotkeyOnText);
+            ShowProblem(problem!);
             return;
         }
 
@@ -944,7 +848,7 @@ public sealed partial class MainForm : Form
         // 旧热键已经被注销/替换，可能把原本能用的停止热键弄丢
         List<string> hotkeyProblems = RegisterHotkeys();
 
-        if (!_engine.Start(slots, skipKey, skipCount, out string startError))
+        if (!_engine.Start(plan, out string startError))
         {
             Beep(beepOn: true);
             SetStatus("status.error", Theme.Red, startError);
@@ -967,6 +871,13 @@ public sealed partial class MainForm : Form
         RefreshSummary();
     }
 
+    /// <summary>把校验问题画到状态栏：待补齐的用橙色，确定不能跑的用红色。</summary>
+    private void ShowProblem(UiProblem problem)
+    {
+        Color color = problem.Severity == UiProblemSeverity.Warning ? Theme.Orange : Theme.Red;
+        SetStatus(problem.Key, color, problem.Args);
+    }
+
     private void StopClicking()
     {
         if (_closing) return;
@@ -987,36 +898,11 @@ public sealed partial class MainForm : Form
 
         SetRunningState(false);
 
-        // 本轮自然结束时 Stopped 回调可能已经先处理过了，这里不重复播提示音 / 重复改状态
-        if (result.RunId <= _handledStopRun) return;
-        _handledStopRun = result.RunId;
+        // 本轮自然结束时 Stopped 回调可能已经先处理过了：判重由协调器统一负责
+        RunOutcome? outcome = _runCoordinator.Complete(result, HotkeyOnText);
+        if (outcome == null) return;
 
-        string? saveError = PersistProgress(result.Slots);
-        RenderProgress(result.Slots);
-        RefreshSummary();
-        UpdateAutoSkipLabel();
-        PlayStopSound();
-
-        switch (result.Reason)
-        {
-            case StopReason.Completed:
-                SetStatus("status.completed", Theme.Green, HotkeyOnText);
-                break;
-
-            // 之前把所有非「完成」的结果都当成用户停止，引擎报错会被静默吞掉
-            case StopReason.Error:
-                ReportEngineError(result);
-                break;
-
-            default:
-                SetStatus("status.stoppedNext", Theme.TextPrimary, HotkeyOnText);
-                break;
-        }
-
-        // 进度没写进磁盘比“已停止”更要紧，放在最后，免得被上面的状态覆盖
-        if (saveError != null) SetStatus("status.progressSaveFailed", Theme.Red, saveError);
-
-        UpdateTrayTexts();
+        ApplyRunOutcome(outcome);
     }
 
     private void ResetProgress()
@@ -1089,9 +975,6 @@ public sealed partial class MainForm : Form
             problems.Add(reason);
         }
     }
-
-    private static HotkeyDef? ParseHotkey(string text) =>
-        HotkeyDef.TryParse(text, out HotkeyDef? definition, out _) ? definition : null;
 
     /// <summary>
     /// 热键没注册上时的提醒。气泡在 Win10/11 可能被「专注助手 / 通知设置」静默丢掉，
@@ -1257,43 +1140,42 @@ public sealed partial class MainForm : Form
     {
         if (_closing) return;
         if (result.Reason == StopReason.User) return; // 主动停止已在 StopClicking 里同步处理
-        if (result.RunId <= _handledStopRun) return;  // 这一轮已经由 StopClicking 处理过了
-        _handledStopRun = result.RunId;
 
-        string? saveError = PersistProgress(result.Slots);
+        // 这一轮是否已经由 StopClicking 处理过，由协调器统一判重
+        RunOutcome? outcome = _runCoordinator.Complete(result, HotkeyOnText);
+        if (outcome == null) return;
+
         SetRunningState(false);
-        RenderProgress(result.Slots);
+        ApplyRunOutcome(outcome);
+    }
+
+    /// <summary>把一轮结束的结果画到界面上（进度、摘要、提示音、状态、错误框）。</summary>
+    private void ApplyRunOutcome(RunOutcome outcome)
+    {
+        RenderProgress(outcome.Slots);
         RefreshSummary();
         UpdateAutoSkipLabel();
         PlayStopSound();
 
-        switch (result.Reason)
+        Color color = outcome.Severity switch
         {
-            case StopReason.Completed:
-                SetStatus("status.completed", Theme.Green, HotkeyOnText);
-                break;
+            RunOutcomeSeverity.Success => Theme.Green,
+            RunOutcomeSeverity.Failure => Theme.Red,
+            _ => Theme.TextPrimary,
+        };
+        SetStatus(outcome.StatusKey, color, outcome.StatusArgs);
 
-            case StopReason.Error:
-                ReportEngineError(result);
-                break;
+        if (outcome.ShowErrorDialog)
+        {
+            MessageBox.Show(
+                this,
+                outcome.ErrorMessage ?? string.Empty,
+                UiText.T("dialog.title"),
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
         }
 
-        // 自然结束时进度也可能写盘失败，别静默丢掉
-        if (saveError != null) SetStatus("status.progressSaveFailed", Theme.Red, saveError);
-
         UpdateTrayTexts();
-    }
-
-    /// <summary>引擎出错时统一报告：状态栏红字 + 提示框。</summary>
-    private void ReportEngineError(EngineStopResult result)
-    {
-        SetStatus("status.error", Theme.Red, result.Message ?? string.Empty);
-        MessageBox.Show(
-            this,
-            result.Message ?? string.Empty,
-            UiText.T("dialog.title"),
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Warning);
     }
 
     // ---------------------------------------------------------------- 界面状态
@@ -1588,10 +1470,4 @@ public sealed partial class MainForm : Form
     // ---------------------------------------------------------------- 小工具
 
     private static string FormatNumber(double value) => value.ToString("0.####", CultureInfo.InvariantCulture);
-
-    private static bool TryParseNumber(string text, out double value)
-    {
-        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)) return true;
-        return double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value);
-    }
 }
