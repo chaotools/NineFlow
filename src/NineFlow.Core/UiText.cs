@@ -79,6 +79,7 @@ public static class UiText
         ["status.checkingUpdate"] = "状态：正在检查更新…",
         ["status.upToDate"] = "状态：已是最新版（{0}）。",
         ["status.updateAvailable"] = "状态：发现新版本 {0}（当前 {1}），等待确认。",
+        ["status.updateAvailableRunning"] = "状态：发现新版本 {0}（当前 {1}）。正在连点，停止后即可更新。",
         ["status.updateCheckFailed"] = "状态：检查更新失败：{0}",
         ["status.downloading"] = "状态：正在下载 {0}… {1}%",
         ["status.updateReady"] = "状态：更新已下载，正在重启完成安装…",

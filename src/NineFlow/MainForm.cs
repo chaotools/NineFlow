@@ -514,6 +514,10 @@ public sealed partial class MainForm : Form
 
     private void HideToTray()
     {
+        // 录键的键盘钩子会吞掉所有输入：窗口一旦藏到托盘就看不见提示了，
+        // 用户只能盲等 8 秒超时，期间整个系统的键盘都失灵。先收掉再隐藏。
+        CancelKeyCapture(restoreValue: true);
+
         Hide();
 
         if (!_balloonShown && _tray != null)
@@ -1120,6 +1124,8 @@ public sealed partial class MainForm : Form
         _captureIndex = index;
         _captureBackup = _keyFields[index].Value;
 
+        _btnUpdate.Enabled = false;
+
         KeyField field = _keyFields[index];
         field.Capturing = true;
         field.Placeholder = UiText.T("capture.hint");
@@ -1140,6 +1146,7 @@ public sealed partial class MainForm : Form
 
         _captureIndex = -1;
         _captureBackup = string.Empty;
+        _btnUpdate.Enabled = !_engine.IsRunning && !_updateBusy;
     }
 
     /// <summary>主动放弃录键（开始连点、关闭窗口、换一行录）。</summary>
@@ -1279,6 +1286,7 @@ public sealed partial class MainForm : Form
         _btnSave.Enabled = !running;
         _btnLoad.Enabled = !running;
         _btnReset.Enabled = !running;
+        _btnUpdate.Enabled = !running && !_updateBusy;
 
         for (int i = 0; i < SlotCount; i++)
         {

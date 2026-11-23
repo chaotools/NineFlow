@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace NineFlow.Core;
@@ -18,7 +19,8 @@ public sealed record UpdateRelease(
     string AssetName,
     Uri DownloadUrl,
     long Size,
-    Uri? ReleasePage);
+    Uri? ReleasePage,
+    string? Sha256 = null);
 
 /// <summary>一次检查的结果。</summary>
 public sealed record UpdateCheckResult(
@@ -69,6 +71,30 @@ public static class UpdateService
 
         return Version.TryParse(text, out Version? parsed) ? Normalize(parsed) : null;
     }
+
+    /// <summary>把 "sha256:abcdef…" 归一成小写十六进制；格式不认识时返回 null。</summary>
+    public static string? NormalizeSha256(string? digest)
+    {
+        if (string.IsNullOrWhiteSpace(digest)) return null;
+
+        const string prefix = "sha256:";
+        string text = digest.Trim();
+        if (!text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return null;
+
+        string hex = text[prefix.Length..].Trim();
+        if (hex.Length != 64) return null;
+
+        foreach (char c in hex)
+        {
+            if (!Uri.IsHexDigit(c)) return null;
+        }
+
+        return hex.ToLowerInvariant();
+    }
+
+    /// <summary>两个 SHA-256 十六进制串是否一致（忽略大小写）。</summary>
+    public static bool DigestMatches(string expectedSha256, string actualSha256) =>
+        string.Equals(expectedSha256, actualSha256, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>只有 GitHub 的 HTTPS 地址才允许下载，避免被改成任意来源。</summary>
     public static bool IsTrustedDownloadUrl(Uri uri)
@@ -151,6 +177,7 @@ public static class UpdateService
             string assetName = string.Empty;
             Uri? downloadUrl = null;
             long size = 0;
+            string? sha256 = null;
 
             if (root.TryGetProperty("assets", out JsonElement assets) && assets.ValueKind == JsonValueKind.Array)
             {
@@ -169,8 +196,25 @@ public static class UpdateService
 
                     if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) || !IsTrustedDownloadUrl(uri)) continue;
 
+                    // GitHub 会为发布资源提供 digest（sha256:...）：有就必须校验，
+                    // 声明了但格式不认识说明发布信息异常，直接跳过这个资源
+                    string? assetSha256 = null;
+                    if (asset.TryGetProperty("digest", out JsonElement digestElement))
+                    {
+                        if (digestElement.ValueKind == JsonValueKind.String)
+                        {
+                            assetSha256 = NormalizeSha256(digestElement.GetString());
+                            if (assetSha256 == null) continue;
+                        }
+                        else if (digestElement.ValueKind != JsonValueKind.Null)
+                        {
+                            continue;
+                        }
+                    }
+
                     assetName = name;
                     downloadUrl = uri;
+                    sha256 = assetSha256;
                     size = asset.TryGetProperty("size", out JsonElement sizeElement) &&
                            sizeElement.TryGetInt64(out long parsedSize)
                         ? parsedSize
@@ -184,7 +228,7 @@ public static class UpdateService
                 return new UpdateCheckResult(UpdateCheckStatus.Failed, current, null, "这次发布里没有找到可下载的 exe。");
             }
 
-            var release = new UpdateRelease(releaseVersion, tag, assetName, downloadUrl, size, releasePage);
+            var release = new UpdateRelease(releaseVersion, tag, assetName, downloadUrl, size, releasePage, sha256);
             return releaseVersion > current
                 ? new UpdateCheckResult(UpdateCheckStatus.Available, current, release, null)
                 : new UpdateCheckResult(UpdateCheckStatus.UpToDate, current, null, null);
@@ -196,7 +240,8 @@ public static class UpdateService
     }
 
     /// <summary>
-    /// 下载更新包并校验：大小与发布信息一致、确实是程序本体、内部版本不低于发布版本。
+    /// 下载更新包并校验：SHA-256 与发布信息一致（发布方提供时）、大小一致、
+    /// 确实是程序本体、内部版本不低于发布版本。
     /// 校验不过就删除临时文件并抛出，绝不把可疑文件交给替换步骤。
     /// </summary>
     public static async Task DownloadAsync(
@@ -233,12 +278,15 @@ public static class UpdateService
                 .ReadAsStreamAsync(cancellationToken)
                 .ConfigureAwait(false);
 
+            string actualSha256;
             await using (var output = new FileStream(
                 tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
             {
                 byte[] buffer = new byte[81920];
                 long received = 0;
                 int lastPercent = -1;
+
+                using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 
                 while (true)
                 {
@@ -252,6 +300,7 @@ public static class UpdateService
                     }
 
                     await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                    hash.AppendData(buffer, 0, read);
 
                     if (progress != null && total is > 0)
                     {
@@ -263,6 +312,8 @@ public static class UpdateService
                         }
                     }
                 }
+
+                actualSha256 = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
             }
 
             long downloaded = new FileInfo(tempPath).Length;
@@ -270,6 +321,12 @@ public static class UpdateService
             if (release.Size > 0 && downloaded != release.Size)
             {
                 throw new InvalidOperationException($"下载大小与发布信息不一致（{downloaded} / {release.Size} 字节）。");
+            }
+
+            // 发布信息里带摘要时，哈希必须一致；没带（旧发布）则退回大小 + 版本号校验
+            if (release.Sha256 is { Length: > 0 } expectedSha256 && !DigestMatches(expectedSha256, actualSha256))
+            {
+                throw new InvalidOperationException("更新包 SHA-256 与发布信息不一致，已拒绝安装（文件可能被篡改或下载不完整）。");
             }
 
             FileVersionInfo info = FileVersionInfo.GetVersionInfo(tempPath);
