@@ -17,7 +17,26 @@ public sealed partial class MainForm
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        ReportPreviousUpdateFailure();
         if (_settings.AutoCheckUpdate) _ = AutoCheckForUpdatesAsync();
+    }
+
+    /// <summary>上次替换脚本失败会留下日志：启动时提示一次并清理，避免“点了更新却什么都没发生”。</summary>
+    private void ReportPreviousUpdateFailure()
+    {
+        string logPath = Path.Combine(UpdateInstaller.WorkDirectory, "apply-update.log");
+        if (!File.Exists(logPath)) return;
+
+        try
+        {
+            File.Delete(logPath);
+        }
+        catch
+        {
+            // 删不掉不影响提示
+        }
+
+        SetStatus("status.previousUpdateFailed", Theme.Orange, Array.Empty<object>());
     }
 
     /// <summary>启动后延迟几秒再查，避免和窗口初始化抢时间；失败保持静默。</summary>
@@ -39,6 +58,9 @@ public sealed partial class MainForm
     {
         if (_updateBusy || _closing) return;
 
+        // 录键时钩子会吞掉键盘输入，弹出来的确认框没法用键盘操作；先收掉再检查
+        if (_keyCapture.IsCapturing) CancelKeyCapture(restoreValue: true);
+
         _updateBusy = true;
         _btnUpdate.Enabled = false;
 
@@ -59,6 +81,25 @@ public sealed partial class MainForm
                 if (manual) SetStatus("status.upToDate", Theme.Green, VersionText(result.CurrentVersion));
                 return;
             }
+
+            // 自动检查可能在用户开始连点之后才拿到结果：这时绝不能弹模态框抢走前台窗口，
+            // 否则后续 SendInput 会打进九序自己的对话框。运行中只给手动检查留一条状态提示。
+            if (_engine.IsRunning)
+            {
+                if (manual)
+                {
+                    SetStatus(
+                        "status.updateAvailableRunning",
+                        Theme.Accent,
+                        VersionText(release.Version),
+                        VersionText(result.CurrentVersion));
+                }
+
+                return;
+            }
+
+            // 检查期间用户可能刚好开始录键：弹模态框前也必须把钩子收掉，否则键盘全被吞
+            if (_keyCapture.IsCapturing) CancelKeyCapture(restoreValue: true);
 
             string text = UiText.T(
                 "dialog.update.text",
@@ -93,7 +134,7 @@ public sealed partial class MainForm
         finally
         {
             _updateBusy = false;
-            if (!_closing && !IsDisposed) _btnUpdate.Enabled = true;
+            if (!_closing && !IsDisposed) _btnUpdate.Enabled = !_engine.IsRunning;
         }
     }
 

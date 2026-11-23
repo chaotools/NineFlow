@@ -514,6 +514,10 @@ public sealed partial class MainForm : Form
 
     private void HideToTray()
     {
+        // 录键的键盘钩子会吞掉所有输入：窗口一旦藏到托盘就看不见提示了，
+        // 用户只能盲等 8 秒超时，期间整个系统的键盘都失灵。先收掉再隐藏。
+        CancelKeyCapture(restoreValue: true);
+
         Hide();
 
         if (!_balloonShown && _tray != null)
@@ -788,6 +792,9 @@ public sealed partial class MainForm : Form
 
     private void SaveConfig()
     {
+        // 录键期间输入框是空的，直接保存会把这一行存成空按键；先收掉再读界面
+        CancelKeyCapture(restoreValue: true);
+
         var errors = new List<string>();
         ReadSlotsFromUi(errors, validate: true);
         if (ReportValidationErrors(errors)) return;
@@ -812,6 +819,8 @@ public sealed partial class MainForm : Form
 
     private void LoadConfig()
     {
+        CancelKeyCapture(restoreValue: true);
+
         if (!_store.Exists)
         {
             SetStatus("status.noConfig", Theme.Orange, Array.Empty<object>());
@@ -962,11 +971,14 @@ public sealed partial class MainForm : Form
     {
         if (_closing) return;
 
-        bool wasRunning = _engine.IsRunning;
+        // 没在运行就不要动界面：自然结束（发满次数 / 出错）由 Stopped 回调负责，
+        // 这里再走一遍只会把「配置已保存」这类提示顶掉
+        if (!_engine.IsRunning) return;
+
         EngineStopResult? result = _engine.Stop();
 
         // 引擎没能在 3 秒内退出：按键还在发，绝不能把界面切成“已停止”
-        if (wasRunning && result == null)
+        if (result == null)
         {
             SetStatus("status.stopping", Theme.Orange, HotkeyOffText);
             UpdateTrayTexts();
@@ -975,12 +987,6 @@ public sealed partial class MainForm : Form
 
         SetRunningState(false);
 
-        if (result == null)
-        {
-            SetIdleStatus(Theme.TextPrimary);
-            return;
-        }
-
         // 本轮自然结束时 Stopped 回调可能已经先处理过了，这里不重复播提示音 / 重复改状态
         if (result.RunId <= _handledStopRun) return;
         _handledStopRun = result.RunId;
@@ -988,15 +994,23 @@ public sealed partial class MainForm : Form
         string? saveError = PersistProgress(result.Slots);
         RenderProgress(result.Slots);
         RefreshSummary();
+        UpdateAutoSkipLabel();
         PlayStopSound();
 
-        if (result.Reason == StopReason.Completed)
+        switch (result.Reason)
         {
-            SetStatus("status.completed", Theme.Green, HotkeyOnText);
-        }
-        else
-        {
-            SetStatus("status.stoppedNext", Theme.TextPrimary, HotkeyOnText);
+            case StopReason.Completed:
+                SetStatus("status.completed", Theme.Green, HotkeyOnText);
+                break;
+
+            // 之前把所有非「完成」的结果都当成用户停止，引擎报错会被静默吞掉
+            case StopReason.Error:
+                ReportEngineError(result);
+                break;
+
+            default:
+                SetStatus("status.stoppedNext", Theme.TextPrimary, HotkeyOnText);
+                break;
         }
 
         // 进度没写进磁盘比“已停止”更要紧，放在最后，免得被上面的状态覆盖
@@ -1008,6 +1022,8 @@ public sealed partial class MainForm : Form
     private void ResetProgress()
     {
         if (_closing) return;
+
+        CancelKeyCapture(restoreValue: true);
 
         // 运行中按钮本来就是禁用的，正常走不到这里；将来若放开，也绝不能边跑边清零。
         // （旧实现在这里调 Application.DoEvents() 去“处理排队中的回调”，会把停止事件重入派发进来）
@@ -1120,6 +1136,8 @@ public sealed partial class MainForm : Form
         _captureIndex = index;
         _captureBackup = _keyFields[index].Value;
 
+        _btnUpdate.Enabled = false;
+
         KeyField field = _keyFields[index];
         field.Capturing = true;
         field.Placeholder = UiText.T("capture.hint");
@@ -1140,6 +1158,7 @@ public sealed partial class MainForm : Form
 
         _captureIndex = -1;
         _captureBackup = string.Empty;
+        _btnUpdate.Enabled = !_engine.IsRunning && !_updateBusy;
     }
 
     /// <summary>主动放弃录键（开始连点、关闭窗口、换一行录）。</summary>
@@ -1241,8 +1260,8 @@ public sealed partial class MainForm : Form
         if (result.RunId <= _handledStopRun) return;  // 这一轮已经由 StopClicking 处理过了
         _handledStopRun = result.RunId;
 
+        string? saveError = PersistProgress(result.Slots);
         SetRunningState(false);
-        PersistProgress(result.Slots);
         RenderProgress(result.Slots);
         RefreshSummary();
         UpdateAutoSkipLabel();
@@ -1255,17 +1274,26 @@ public sealed partial class MainForm : Form
                 break;
 
             case StopReason.Error:
-                SetStatus("status.error", Theme.Red, result.Message ?? string.Empty);
-                MessageBox.Show(
-                    this,
-                    result.Message ?? string.Empty,
-                    UiText.T("dialog.title"),
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                ReportEngineError(result);
                 break;
         }
 
+        // 自然结束时进度也可能写盘失败，别静默丢掉
+        if (saveError != null) SetStatus("status.progressSaveFailed", Theme.Red, saveError);
+
         UpdateTrayTexts();
+    }
+
+    /// <summary>引擎出错时统一报告：状态栏红字 + 提示框。</summary>
+    private void ReportEngineError(EngineStopResult result)
+    {
+        SetStatus("status.error", Theme.Red, result.Message ?? string.Empty);
+        MessageBox.Show(
+            this,
+            result.Message ?? string.Empty,
+            UiText.T("dialog.title"),
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
     }
 
     // ---------------------------------------------------------------- 界面状态
@@ -1279,6 +1307,7 @@ public sealed partial class MainForm : Form
         _btnSave.Enabled = !running;
         _btnLoad.Enabled = !running;
         _btnReset.Enabled = !running;
+        _btnUpdate.Enabled = !running && !_updateBusy;
 
         for (int i = 0; i < SlotCount; i++)
         {
