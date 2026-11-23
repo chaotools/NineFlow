@@ -15,7 +15,7 @@
 
 ```powershell
 dotnet build tests\NineFlow.Tests\NineFlow.Tests.csproj -c Release
-dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll                     # 完整 374 项
+dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll                     # 完整 487 项（455 逻辑 + 32 集成）
 dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll --skip-integration   # 跳过需真实桌面的 32 项
 ```
 

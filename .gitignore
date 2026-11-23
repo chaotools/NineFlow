@@ -2,7 +2,14 @@
 bin/
 obj/
 publish/
+publish-updated/
+publish-nocompress/
 artifacts/
+
+# 单文件解压缓存与进程临时目录
+.bundle-extract/
+.runtime-temp/
+.temp/
 
 # Visual Studio / Rider / VS Code 本地设置
 .vs/
@@ -17,3 +24,6 @@ NineFlow.ini.corrupt-*
 # 临时文件
 *.tmp
 *.log
+
+# WorkBuddy 项目数据（本地记忆与工作日志，不入库）
+.workbuddy/

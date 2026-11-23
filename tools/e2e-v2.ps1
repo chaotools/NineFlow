@@ -142,6 +142,17 @@ function Invoke-Button($window, [string]$automationId) {
     $element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
 }
 
+function Open-SettingsMenu($window) {
+    Invoke-Button $window "button.more"
+    Start-Sleep -Milliseconds 350
+}
+
+function Open-SwitchMenu($window, [string]$switchId) {
+    Open-SettingsMenu $window
+    Invoke-Button $window ($switchId + ".group")
+    Start-Sleep -Milliseconds 350
+}
+
 function Get-MainWindow([int]$timeoutSeconds = 15) {
     $deadline = (Get-Date).AddSeconds($timeoutSeconds)
     while ((Get-Date) -lt $deadline) {
@@ -182,7 +193,7 @@ function Read-IniValue([string]$path, [string]$section, [string]$key) {
 # rows: 数组，每项 @{ Enabled=1; Key="j"; Interval=0.01; Max=3 }
 function Write-TestIni([string]$path, $rows, [string]$hotkeyOn = "F7", [string]$hotkeyOff = "F8", [string]$skipCount = "", [string]$skipKey = "Down", [int]$closeToTray = 1) {
     $lines = @()
-    for ($i = 1; $i -le 10; $i++) {
+    for ($i = 1; $i -le [Math]::Max(2, $rows.Count); $i++) {
         $row = if ($i -le $rows.Count) { $rows[$i - 1] } else { @{ Enabled = 0; Key = ""; Interval = 1.5; Max = 0 } }
         $lines += "[Slot$i]"
         $lines += "Enabled=$($row.Enabled)"
@@ -229,14 +240,20 @@ $proc = Start-Process -FilePath $ExePath -PassThru
 $window = Get-MainWindow
 Check "主窗口出现" ($window -ne $null)
 if ($window) {
-    Check "窗口标题是中文名「九序」" ($window.Current.Name -eq "九序")
+    Check "窗口标题含中文名与状态" ($window.Current.Name -like "九序 · *")
     Check "存在开始按钮" ((Find-ById $window "button.start") -ne $null)
     Check "存在停止按钮" ((Find-ById $window "button.stop") -ne $null)
-    Check "存在保存按钮" ((Find-ById $window "button.save") -ne $null)
-    Check "存在 10 个行开关" ((1..10 | Where-Object { Find-ById $window "slot$_.enabled" } | Measure-Object).Count -eq 10)
-    Check "存在提示音开关" ((Find-ById $window "switch.beep") -ne $null)
-    Check "存在关闭到托盘开关" ((Find-ById $window "switch.closeToTray") -ne $null)
-    Check "存在窗口置顶开关" ((Find-ById $window "switch.topMost") -ne $null)
+    Check "存在重置按钮" ((Find-ById $window "button.reset") -ne $null)
+    Open-SettingsMenu $window
+    Check "菜单里有保存按钮" ((Find-ById $window "button.save") -ne $null)
+    $slotSwitches = (1..20 | Where-Object { Find-ById $window "slot$_.enabled" } | Measure-Object).Count
+    Check "至少存在 2 个行开关" ($slotSwitches -ge 2) "实际 $slotSwitches 个"
+    Check "存在添加行按钮" ((Find-ById $window "button.addSlot") -ne $null)
+    foreach ($id in @("switch.beep", "switch.closeToTray", "switch.topMost", "switch.autoUpdate")) {
+        Check "菜单里存在一级项 $id" ((Find-ById $window ($id + ".group")) -ne $null)
+    }
+    Open-SwitchMenu $window "switch.beep"
+    Check "提示音二级菜单里有开关" ((Find-ById $window "switch.beep") -ne $null)
     $summary = Get-Text $window "status.summary"
     Check "本次执行摘要显示 2 行" ($summary -like "*共 2 行*") "实际: $summary"
 }
@@ -339,14 +356,13 @@ if ($window) {
     $hwnd = [IntPtr]$window.Current.NativeWindowHandle
     Check "默认不置顶" (-not [E2E]::IsTopMost($hwnd))
 
-    $topSwitch = Find-ById $window "switch.topMost"
-    $toggle = $topSwitch.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
-    $toggle.Toggle()
+    Open-SwitchMenu $window "switch.topMost"
+    Invoke-Button $window "switch.topMost"
     Start-Sleep -Milliseconds 600
     Check "打开置顶后窗口为置顶状态" ([E2E]::IsTopMost($hwnd))
 
-    $topSwitch = Find-ById $window "switch.topMost"
-    $topSwitch.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle()
+    Open-SwitchMenu $window "switch.topMost"
+    Invoke-Button $window "switch.topMost"
     Start-Sleep -Milliseconds 600
     Check "关闭置顶后恢复普通状态" (-not [E2E]::IsTopMost($hwnd))
 }

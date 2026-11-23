@@ -62,7 +62,7 @@ public sealed partial class MainForm
         if (_keyCapture.IsCapturing) CancelKeyCapture(restoreValue: true);
 
         _updateBusy = true;
-        _btnUpdate.Enabled = false;
+        _miUpdate.Enabled = false;
 
         try
         {
@@ -134,7 +134,7 @@ public sealed partial class MainForm
         finally
         {
             _updateBusy = false;
-            if (!_closing && !IsDisposed) _btnUpdate.Enabled = !_engine.IsRunning;
+            if (!_closing && !IsDisposed) _miUpdate.Enabled = !_engine.IsRunning;
         }
     }
 

@@ -27,18 +27,27 @@ internal static class KeyCaptureTests
             "小键盘回车是扩展键",
             SendSpec.TryParse(numpadEnter, out List<SendToken> numpadTokens, out _) && numpadTokens[0].Extended);
 
-        // 字母：没有修饰键必须写成小写字符，否则发出去会多一个 Shift 变成大写
-        Program.Check("捕获 a", KeyCapture.TryFormat(0x41, false, 0, out string plainA, out _));
-        Program.Equal("a 写法", "a", plainA);
+        // 字母识别的是物理按键，统一输出大写键名（R / V），不按字符大小写处理
+        Program.Check("捕获 R 键", KeyCapture.TryFormat(0x52, false, 0, out string plainR, out _));
+        Program.Equal("R 键写法", "R", plainR);
         Program.Check(
-            "a 解析为字符而不是大写键",
-            SendSpec.TryParse(plainA, out List<SendToken> aTokens, out _) && aTokens[0].IsCharacter);
+            "R 解析为物理键且不带 Shift",
+            SendSpec.TryParse(plainR, out List<SendToken> rTokens, out _)
+            && rTokens[0].VirtualKey == 0x52
+            && rTokens[0].Modifiers == 0);
+
+        // 手写的小写字母仍按字符发送，保留手动填值的灵活性
+        Program.Check("手写 a 解析为字符", SendSpec.TryParse("a", out List<SendToken> aTokens, out _));
+        Program.Check("a 是字符而不是大写键", aTokens[0].IsCharacter);
+
+        Program.Check("捕获 Shift+R", KeyCapture.TryFormat(0x52, false, SendSpec.ModShift, out string shiftR, out _));
+        Program.Equal("Shift+R 写法", "+R", shiftR);
 
         // 组合键：统一用 ^ ! + # 前缀写法，比 Ctrl+Shift+S 更适合窄输入框
         Program.Check("捕获 Ctrl+A", KeyCapture.TryFormat(0x41, false, SendSpec.ModControl, out string ctrlA, out _));
-        Program.Equal("Ctrl+A 写法", "^a", ctrlA);
+        Program.Equal("Ctrl+A 写法", "^A", ctrlA);
         Program.Check(
-            "^a 解析回 A 且只带 Ctrl",
+            "^A 解析回 A 且只带 Ctrl",
             SendSpec.TryParse(ctrlA, out List<SendToken> ctrlATokens, out _)
             && ctrlATokens[0].VirtualKey == 0x41
             && ctrlATokens[0].Modifiers == SendSpec.ModControl);
@@ -46,7 +55,7 @@ internal static class KeyCaptureTests
         Program.Check(
             "捕获 Ctrl+Shift+S",
             KeyCapture.TryFormat(0x53, false, SendSpec.ModControl | SendSpec.ModShift, out string css, out _));
-        Program.Equal("Ctrl+Shift+S 写法", "^+s", css);
+        Program.Equal("Ctrl+Shift+S 写法", "^+S", css);
 
         Program.Check("捕获 Alt+F4", KeyCapture.TryFormat(0x73, false, SendSpec.ModAlt, out string altF4, out _));
         Program.Equal("Alt+F4 写法", "!F4", altF4);

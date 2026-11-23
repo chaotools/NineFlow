@@ -91,6 +91,13 @@ internal static class StartPlannerTests
             out problem);
         CheckProblem("发送键等于停止热键时拒绝", plan, problem, "status.blocked");
         Program.Check("提示说明撞的是停止热键", problem != null && problem.Text.Contains("停止热键"));
+
+        SlotState[] resetConflict = { Slot(1, "F9") };
+        plan = StartPlanner.TryCreate(
+            new StartRequest(resetConflict, StartHotkey: "F7", StopHotkey: "F8", ResetHotkey: "F9"),
+            out problem);
+        CheckProblem("发送键等于重置热键时拒绝", plan, problem, "status.blocked");
+        Program.Check("提示说明撞的是重置热键", problem != null && problem.Text.Contains("重置进度热键"));
     }
 
     private static void RejectsSkipKeyConflicts()
@@ -103,6 +110,11 @@ internal static class StartPlannerTests
 
         CheckProblem("跳过键等于启动热键时拒绝", plan, problem, "status.blocked");
         Program.Check("提示说明问题出在跳过键", problem != null && problem.Text.Contains("跳过键"));
+
+        plan = StartPlanner.TryCreate(
+            new StartRequest(slots, ResetHotkey: "F9", SkipKey: "F9", SkipCount: "3"),
+            out problem);
+        CheckProblem("跳过键等于重置热键时拒绝", plan, problem, "status.blocked");
     }
 
     private static void RejectsBadSkipCount()

@@ -16,6 +16,7 @@
     <ApplicationDefaultFont>Microsoft YaHei UI, 9pt</ApplicationDefaultFont>
 
     <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyTitle>九序</AssemblyTitle>
     <Product>九序</Product>
     <Description>九序 · 多键连发 · 智能续点 · 转发助手</Description>
@@ -45,7 +46,6 @@
 
   <ItemGroup>
     <EmbeddedResource Include="..\..\assets\app.ico" LogicalName="NineFlow.app.ico" />
-    <EmbeddedResource Include="..\..\assets\logo-mark.png" LogicalName="NineFlow.logo.png" />
   </ItemGroup>
 
 </Project>

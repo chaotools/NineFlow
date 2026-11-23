@@ -27,6 +27,7 @@ public static class StartPlanner
 
         HotkeyDef? startHotkey = ParseHotkey(request.StartHotkey);
         HotkeyDef? stopHotkey = ParseHotkey(request.StopHotkey);
+        HotkeyDef? resetHotkey = ParseHotkey(request.ResetHotkey);
 
         var tokens = new List<SendToken>[active.Count];
         for (int i = 0; i < active.Count; i++)
@@ -57,6 +58,14 @@ public static class StartPlanner
                 return null;
             }
 
+            if (resetHotkey != null && KeyConflict.Contains(parsed, resetHotkey))
+            {
+                problem = UiProblem.Error(
+                    "status.blocked",
+                    UiText.T("row.conflictReset", slot.Index, slot.Key, resetHotkey.Display));
+                return null;
+            }
+
             tokens[i] = parsed;
         }
 
@@ -84,6 +93,14 @@ public static class StartPlanner
                 problem = UiProblem.Error(
                     "status.blocked",
                     UiText.T("skip.conflictStart", skipKeyText, startHotkey.Display));
+                return null;
+            }
+
+            if (resetHotkey != null && KeyConflict.Contains(parsedSkip, resetHotkey))
+            {
+                problem = UiProblem.Error(
+                    "status.blocked",
+                    UiText.T("skip.conflictReset", skipKeyText, resetHotkey.Display));
                 return null;
             }
 

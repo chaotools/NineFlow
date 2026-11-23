@@ -86,19 +86,20 @@ public sealed class KeyCapture : IDisposable
 
     /// <summary>
     /// 把一次按键翻译成九序的写法。纯函数，便于单元测试。
-    /// 输出统一用 <c>^ ! + #</c> 前缀写法（界面输入框窄，比 Ctrl+Shift+S 好读也好改）。
+    /// 组合键用 <c>^ ! + #</c> 前缀写法；字母统一输出按键名（R / V），不按字符大小写处理。
     /// </summary>
     public static bool TryFormat(ushort virtualKey, bool extended, uint modifiers, out string text, out string error)
     {
         text = string.Empty;
         error = string.Empty;
 
-        // 字母 / 数字：没有修饰键就写成小写字符（发出去就是 a、5）；
-        // 有修饰键写成 ^a，解析回来仍是同一个物理键，不会凭空多出 Shift
+        // 字母识别的是物理按键，统一写成大写键名（R、V），不是按字符大小写；
+        // 数字仍是字符本身，Ctrl+R / Ctrl+Shift+R 这类组合照旧用 ^ / ^+ 前缀。
         if (IsAsciiLetterOrDigit(virtualKey))
         {
-            char letter = char.ToLowerInvariant((char)virtualKey);
-            text = Prefix(modifiers) + letter;
+            char key = (char)virtualKey;
+            text = Prefix(modifiers)
+                + (char.IsAsciiDigit(key) ? key.ToString() : char.ToUpperInvariant(key).ToString());
             return true;
         }
 

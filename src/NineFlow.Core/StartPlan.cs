@@ -34,7 +34,8 @@ public sealed record StartRequest(
     string? StopHotkey = null,
     string? SkipKey = null,
     string? SkipCount = null,
-    bool TargetUsable = true);
+    bool TargetUsable = true,
+    string? ResetHotkey = null);
 
 /// <summary>
 /// 校验通过后的执行计划：按键在计划阶段就解析成动作，引擎拿到直接发，不再二次解析。

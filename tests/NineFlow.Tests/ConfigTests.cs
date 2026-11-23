@@ -34,6 +34,10 @@ internal static class IniDocumentTests
         Program.Check("序列化包含新值", serialized.Contains("Key=Enter"), serialized);
         Program.Check("序列化保留未知键", serialized.Contains("Extra=x"), serialized);
 
+        Program.Check("删除节成功", document.RemoveSection("Hotkey"));
+        Program.Equal("删除后读不到该节", null, document.Get("Hotkey", "On"));
+        Program.Check("重复删除返回 false", !document.RemoveSection("Hotkey"));
+
         string tempPath = Path.Combine(Path.GetTempPath(), "nineflow-ini-" + Guid.NewGuid().ToString("N") + ".ini");
         string utf16Path = Path.Combine(Path.GetTempPath(), "nineflow-ini16-" + Guid.NewGuid().ToString("N") + ".ini");
 
@@ -72,22 +76,23 @@ internal static class SettingsStoreTests
 
             // 1) 无配置文件 → 出厂默认值
             AppSettings defaults = store.Load();
-            Program.Equal("默认行数", 10, defaults.Slots.Count);
+            Program.Equal("默认行数", AppDefaults.MinSlots, defaults.Slots.Count);
             Program.Check("默认第 1 行启用", defaults.Slots[0].Enabled);
             Program.Equal("默认第 1 行按键", "Down", defaults.Slots[0].Key);
             Program.Equal("默认第 1 行间隔", 0.02, defaults.Slots[0].Interval);
             Program.Equal("默认第 1 行次数", 9, defaults.Slots[0].MaxCount);
             Program.Check("默认第 2 行启用", defaults.Slots[1].Enabled);
             Program.Equal("默认第 2 行按键", "Enter", defaults.Slots[1].Key);
-            Program.Check("默认第 3 行禁用", !defaults.Slots[2].Enabled);
+            Program.Equal("默认行号连续", 2, defaults.Slots[1].Index);
             Program.Equal("默认启动热键", "F7", defaults.HotkeyOn);
             Program.Equal("默认停止热键", "F8", defaults.HotkeyOff);
+            Program.Equal("默认重置热键", "F9", defaults.HotkeyReset);
             Program.Equal("默认跳过键", "Down", defaults.SkipKey);
             Program.Equal("默认跳过数为空", string.Empty, defaults.SkipCount);
             Program.Check("读取前文件不存在", !store.Exists);
 
-            // 2) 保存 → 读取
-            var settings = new AppSettings();
+            // 2) 保存 → 读取（用 3 行验证非默认行数）
+            var settings = new AppSettings { Slots = AppDefaults.CreateSlots(3) };
             settings.Slots[0].Done = 27;
             settings.Slots[1].MaxCount = 5;
             settings.Slots[2].Enabled = true;
@@ -95,6 +100,7 @@ internal static class SettingsStoreTests
             settings.Slots[2].Interval = 0.35;
             settings.Slots[2].MaxCount = 3;
             settings.HotkeyOn = "Ctrl+F7";
+            settings.HotkeyReset = "F10";
             settings.SkipCount = "7";
 
             Program.Check("保存配置成功", store.SaveConfig(settings, out string saveError), saveError);
@@ -107,6 +113,7 @@ internal static class SettingsStoreTests
             Program.Equal("读取组合键", "^a", loaded.Slots[2].Key);
             Program.Equal("读取间隔", 0.35, loaded.Slots[2].Interval);
             Program.Equal("读取启动热键", "Ctrl+F7", loaded.HotkeyOn);
+            Program.Equal("读取重置热键", "F10", loaded.HotkeyReset);
             Program.Equal("读取跳过数", "7", loaded.SkipCount);
 
             // 3) 保存进度不应破坏其它配置
@@ -119,10 +126,41 @@ internal static class SettingsStoreTests
             Program.Equal("进度保存后配置仍在", 5, afterProgress.Slots[1].MaxCount);
             Program.Equal("进度保存后热键仍在", "Ctrl+F7", afterProgress.HotkeyOn);
 
-            // 4) 损坏的文件不应该抛异常
+            // 4) 行数按需：3 行能存能读，删回 2 行后旧节被清理
+            Program.Check("保存 3 行成功",
+                store.SaveConfig(new AppSettings { Slots = AppDefaults.CreateSlots(3) }, out string threeError), threeError);
+            Program.Equal("读取到 3 行", 3, store.Load().Slots.Count);
+
+            Program.Check("删回 2 行成功",
+                store.SaveConfig(new AppSettings { Slots = AppDefaults.CreateSlots(2) }, out string twoError), twoError);
+            AppSettings afterRemove = store.Load();
+            Program.Equal("删行后只剩 2 行", 2, afterRemove.Slots.Count);
+            IniDocument raw = IniDocument.Load(path);
+            Program.Equal("多余的 Slot3 已清理", null, raw.Get("Slot3", "Key"));
+            Program.Equal("最少行数", 2, AppDefaults.MinSlots);
+            Program.Equal("最多行数", 20, AppDefaults.MaxSlots);
+
+            // 5) 旧配置里的 10 行要全部保留，不能砍成 2 行
+            var oldText = new StringBuilder();
+            for (int i = 1; i <= 10; i++)
+            {
+                oldText.AppendLine($"[Slot{i}]");
+                oldText.AppendLine("Enabled=0");
+                oldText.AppendLine($"Key=F{i}");
+                oldText.AppendLine("Interval=1.5");
+                oldText.AppendLine("MaxCount=0");
+                oldText.AppendLine("Done=0");
+                oldText.AppendLine();
+            }
+            File.WriteAllText(path, oldText.ToString());
+            AppSettings oldSettings = store.Load();
+            Program.Equal("旧 10 行全部读出", 10, oldSettings.Slots.Count);
+            Program.Equal("旧第 10 行按键保留", "F10", oldSettings.Slots[9].Key);
+
+            // 6) 损坏的文件不应该抛异常
             File.WriteAllText(path, "这不是 ini 文件\n[Slot1\nEnabled=\n");
             AppSettings damaged = store.Load();
-            Program.Equal("损坏文件回退默认行数", 10, damaged.Slots.Count);
+            Program.Equal("损坏文件回退默认行数", AppDefaults.MinSlots, damaged.Slots.Count);
             Program.Equal("损坏文件回退默认按键", "Down", damaged.Slots[0].Key);
         }
         finally

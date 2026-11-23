@@ -56,6 +56,14 @@ public sealed class IniDocument
         return section;
     }
 
+    /// <summary>删除一个节；不存在时返回 false。用于删行后清理多余的 SlotN。</summary>
+    public bool RemoveSection(string name)
+    {
+        if (!_byName.Remove(name, out IniSection? section)) return false;
+        _sections.Remove(section);
+        return true;
+    }
+
     public static IniDocument Load(string path) => Parse(ReadAllText(path));
 
     public static IniDocument Parse(string text)
