@@ -8,6 +8,9 @@ public sealed class SlotState
     /// <summary>最小定时间隔（毫秒）。</summary>
     public const int MinPeriodMs = 10;
 
+    /// <summary>间隔上限（秒）。再大没有意义，且能防止换算毫秒时 int 溢出。</summary>
+    public const double MaxIntervalSeconds = 3600;
+
     /// <summary>1 基行号。</summary>
     public int Index { get; init; }
 
@@ -50,11 +53,11 @@ public sealed class SlotState
         Done = Done,
     };
 
-    /// <summary>间隔下限 0.01 秒。</summary>
+    /// <summary>间隔下限 0.01 秒，上限 3600 秒。上限同时保证换算毫秒不会溢出 int。</summary>
     public static double ClampInterval(double value)
     {
         if (double.IsNaN(value) || double.IsInfinity(value)) return 1.5;
-        return Math.Max(0.01, value);
+        return Math.Clamp(value, 0.01, MaxIntervalSeconds);
     }
 
     public static int ClampCount(int value) => Math.Max(0, value);

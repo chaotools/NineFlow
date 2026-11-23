@@ -1461,9 +1461,9 @@ public sealed partial class MainForm : Form
     private void HandleEngineStoppedOnUi(EngineStopResult result)
     {
         if (_closing) return;
-        if (result.Reason == StopReason.User) return; // 主动停止已在 StopClicking 里同步处理
 
-        // 这一轮是否已经由 StopClicking 处理过，由协调器统一判重
+        // 用户停止通常已由 StopClicking 同步收尾，这里靠协调器按轮次判重；只有
+        // Stop() 3 秒超时拿不到结果（界面停在「停止中」）时，才会真正走到这里恢复界面
         RunOutcome? outcome = _runCoordinator.Complete(result, HotkeyOnText);
         if (outcome == null) return;
 
