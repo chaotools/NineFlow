@@ -38,7 +38,7 @@ public partial class MainWindow : Window
     private IntPtr _targetWindow;
     private string _targetTitle = string.Empty;
 
-    private bool _closing;
+    private volatile bool _closing;
     private bool _exiting;
     private bool _rebuilding;
     private bool _suppressOption;
@@ -64,6 +64,21 @@ public partial class MainWindow : Window
         _store = new SettingsStore(SettingsStore.DefaultIniPath(AppContext.BaseDirectory));
         _settings = _store.Load();
         if (!_store.Exists) _store.SaveConfig(_settings, out _);
+
+        // 首次运行静默创建桌面快捷方式；成功才写标记，失败的话下次启动会再试一次
+        bool shortcutCreated = false;
+        if (!_settings.ShortcutCreated && Environment.ProcessPath is { Length: > 0 } exePath)
+        {
+            shortcutCreated = DesktopShortcut.TryCreate(exePath);
+            if (shortcutCreated)
+            {
+                _settings.ShortcutCreated = true;
+                _store.SaveConfig(_settings, out _);
+            }
+        }
+
+        // Windows 关机 / 注销时直接退出并落盘，而不是藏进托盘被系统强杀
+        Application.Current.SessionEnding += (_, _) => _exiting = true;
 
         _runCoordinator = new RunCoordinator(PersistProgress);
         _engine = new ClickEngine(new KeySender()) { PrepareSendTarget = RestoreTargetFocus };
@@ -94,6 +109,10 @@ public partial class MainWindow : Window
         if (_settings.Notes.Count > 0)
         {
             SetStatus("note.read", "OrangeBrush", UnwrapNote(_settings.Notes[0]));
+        }
+        else if (shortcutCreated)
+        {
+            SetStatus("status.shortcutCreated", "GreenBrush");
         }
         else
         {
@@ -259,7 +278,6 @@ public partial class MainWindow : Window
         CancelKeyCapture(restoreValue: true);
 
         Hide();
-        ShowInTaskbar = false;
 
         if (!_balloonShown && _tray != null)
         {
@@ -285,12 +303,12 @@ public partial class MainWindow : Window
 
         Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-        ShowInTaskbar = true;
 
-        // 从后台唤到前台：临时置顶一下，绕开系统前台窗口限制
+        // 从后台唤到前台：临时置顶，Activate 后再恢复——先恢复再激活会被前台锁拦下。
+        // 不要动 ShowInTaskbar：WPF 切它会把 Win32 窗口句柄整个重建，
+        // 全局热键和 HwndSource 消息钩子都会失效（Hide() 本身就不占任务栏）
         bool previousTopMost = Topmost;
         Topmost = true;
-        Topmost = _settings.TopMost;
         Activate();
         if (!_settings.TopMost) Topmost = previousTopMost;
 
@@ -955,15 +973,17 @@ public partial class MainWindow : Window
         var parts = new List<string>();
         var active = new List<SlotState>();
 
-        for (int i = 0; i < slots.Count; i++)
+        foreach (SlotState slot in slots)
         {
-            SlotState slot = slots[i];
             bool isActive = slot.Enabled && !string.IsNullOrWhiteSpace(slot.Key);
             if (isActive) active.Add(slot);
 
-            if (i < Rows.Count)
+            // 引擎快照只含启用行（StartPlanner 已过滤），按 Index 对位而不是按下标，
+            // 否则禁用行排在前面时进度会错行
+            int rowIndex = slot.Index - 1;
+            if (rowIndex >= 0 && rowIndex < Rows.Count)
             {
-                Rows[i].ProgressText = slot.MaxCount > 0
+                Rows[rowIndex].ProgressText = slot.MaxCount > 0
                     ? slot.RunCount + "/" + slot.MaxCount
                     : (slot.RunCount > 0 ? slot.RunCount.ToString(CultureInfo.InvariantCulture) : "∞");
             }
