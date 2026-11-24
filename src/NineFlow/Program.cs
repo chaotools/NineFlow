@@ -74,6 +74,16 @@ internal static class Program
 
     private static void ShowFatalError(Exception? exception)
     {
+        // 诊断日志开着就把异常也记进去（此时可能还来不及 flush，AppendAllText 是即写即落的）
+        try
+        {
+            DiagnosticLog.Exception("崩溃", exception);
+        }
+        catch
+        {
+            // 诊断日志失败不影响原有的临时目录日志
+        }
+
         // 出错时把完整堆栈写到临时目录，便于排查（不联网、不上传）
         try
         {

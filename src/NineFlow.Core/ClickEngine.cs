@@ -111,6 +111,9 @@ public sealed class ClickEngine : IDisposable
             };
             _thread = thread;
             thread.Start();
+
+            DiagnosticLog.Info("engine",
+                $"第 {runId} 轮开始：{plan.ActiveCount} 行 × 各自次数，跳过 {plan.SkipCount} 项");
             return true;
         }
     }
@@ -150,6 +153,8 @@ public sealed class ClickEngine : IDisposable
 
         _stopRequested = true;
 
+        DiagnosticLog.Info("engine", "收到停止请求");
+
         bool joined;
         try
         {
@@ -162,7 +167,11 @@ public sealed class ClickEngine : IDisposable
 
         // 线程还没退出就清 _running，会让界面以为已经停了，而按键其实还在发；
         // 更糟的是 Start 的防重入检查会失效，可能真的并发起两轮。
-        if (!joined) return null;
+        if (!joined)
+        {
+            DiagnosticLog.Warn("engine", "停止超时：后台线程 3 秒内没有退出，按键可能仍在发送");
+            return null;
+        }
 
         _running = false;
 
@@ -190,6 +199,7 @@ public sealed class ClickEngine : IDisposable
         try
         {
             TimePeriod.Begin(1);
+            DiagnosticLog.Info("engine", $"第 {runId} 轮线程启动（预热 {_warmupMs}ms，稳定等待 {PrepareSettleMs}ms）");
             try
             {
                 // 给触发用的热键一点时间松开修饰键，避免污染发送内容
@@ -223,6 +233,7 @@ public sealed class ClickEngine : IDisposable
                 // 续点：先把光标移过已处理的项目
                 if (_skipTokens != null && _skipCount > 0)
                 {
+                    DiagnosticLog.Info("engine", $"第 {runId} 轮续点跳过 {_skipCount} 项开始");
                     for (int i = 0; i < _skipCount; i++)
                     {
                         if (_stopRequested)
@@ -263,7 +274,12 @@ public sealed class ClickEngine : IDisposable
                     {
                         if (_stopRequested) break;
 
-                        if (!_sender.Send(tokens[index], out string sendError)) throw new KeySendException(sendError);
+                        if (!_sender.Send(tokens[index], out string sendError))
+                        {
+                            DiagnosticLog.Error("engine",
+                                $"第 {runId} 轮发送失败：参与行 {index + 1} · {sendError}");
+                            throw new KeySendException(sendError);
+                        }
 
                         session.RecordSent(index);
                         ProgressChanged?.Invoke();
@@ -285,10 +301,12 @@ public sealed class ClickEngine : IDisposable
         }
         catch (KeySendException ex)
         {
+            DiagnosticLog.Error("engine", $"第 {runId} 轮因发送错误结束：{ex.Message}");
             Finish(runId, new EngineStopResult(StopReason.Error, ex.Message, session.Snapshot()));
         }
         catch (Exception ex)
         {
+            DiagnosticLog.Exception("engine", ex);
             Finish(runId, new EngineStopResult(StopReason.Error, "连点异常：" + ex.Message, session.Snapshot()));
         }
     }
@@ -312,6 +330,9 @@ public sealed class ClickEngine : IDisposable
 
         _running = false;
 
+        DiagnosticLog.Info("engine",
+            $"第 {runId} 轮结束：{terminal.Reason}{(string.IsNullOrEmpty(terminal.Message) ? string.Empty : " · " + terminal.Message)} · {DescribeSnapshot(terminal.Slots)}");
+
         try
         {
             Stopped?.Invoke(terminal);
@@ -320,5 +341,20 @@ public sealed class ClickEngine : IDisposable
         {
             // 事件订阅者异常不应让线程崩溃
         }
+    }
+
+    /// <summary>把槽位快照压成一行摘要，例如「Down 本9/9 累27；Enter 本9/9 累27」。</summary>
+    private static string DescribeSnapshot(IReadOnlyList<SlotState> slots)
+    {
+        var parts = new List<string>(slots.Count);
+        foreach (SlotState slot in slots)
+        {
+            parts.Add(
+                (string.IsNullOrEmpty(slot.Key) ? $"行{slot.Index}" : slot.Key) +
+                " 本" + slot.RunCount + (slot.MaxCount > 0 ? "/" + slot.MaxCount : "") +
+                " 累" + slot.Done);
+        }
+
+        return string.Join("；", parts);
     }
 }

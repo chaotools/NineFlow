@@ -71,7 +71,7 @@ public sealed partial class MainForm : Form
     private AppTextField _skipCountField = null!;
     private Label _lblSkipAuto = null!;
 
-    // 次要操作与四个开关收进「设置」菜单，仍保留原有自动化 ID
+    // 次要操作与设置开关收进「设置」菜单，仍保留原有自动化 ID
     private ToolStripMenuItem _miSave = null!;
     private ToolStripMenuItem _miLoad = null!;
     private ToolStripMenuItem _miUpdate = null!;
@@ -79,6 +79,8 @@ public sealed partial class MainForm : Form
     private ToolStripMenuItem _miCloseToTray = null!;
     private ToolStripMenuItem _miTopMost = null!;
     private ToolStripMenuItem _miAutoUpdate = null!;
+    private ToolStripMenuItem _miDiagnostics = null!;
+    private ToolStripMenuItem _miOpenLog = null!;
 
     private AppButton _btnMenu = null!;
     private ContextMenuStrip _actionMenu = null!;
@@ -142,6 +144,10 @@ public sealed partial class MainForm : Form
         _store = new SettingsStore(SettingsStore.DefaultIniPath(AppContext.BaseDirectory));
 
         _settings = _store.Load();
+
+        // 诊断日志按配置开关；开启后从这里开始记录（含启动信息）
+        ApplyDiagnostics(_settings.Diagnostics);
+        DiagnosticLog.Info("app", $"启动：ini {(_store.Exists ? "已加载 " : "不存在 ")}{_store.Path} · exe {Environment.ProcessPath}");
 
         // 首次运行先落盘默认配置，这样累计进度从一开始就能保存
         if (!_store.Exists)
@@ -642,7 +648,7 @@ public sealed partial class MainForm : Form
         _lblSummary.Name = "status.summary";
     }
 
-    /// <summary>四个设置项放一级，各自的开关放二级；次要操作也在一级，保留原有自动化 ID。</summary>
+    /// <summary>设置开关放一级，各自的开关放二级；次要操作也在一级，保留原有自动化 ID。</summary>
     private void BuildMenu()
     {
         _actionMenu = new ContextMenuStrip
@@ -666,6 +672,15 @@ public sealed partial class MainForm : Form
             SaveOptionsQuietly();
         });
         _miAutoUpdate = AddCheckGroup("switch.autoUpdate", on => { _settings.AutoCheckUpdate = on; SaveOptionsQuietly(); });
+        _miDiagnostics = AddCheckGroup("switch.diagnostics", on =>
+        {
+            _settings.Diagnostics = on;
+            ApplyDiagnostics(on);
+            SaveOptionsQuietly();
+        });
+
+        _actionMenu.Items.Add(new ToolStripSeparator());
+        _miOpenLog = AddMenuItem("menu.openLog", OpenLogFolder);
     }
 
     private ToolStripMenuItem AddMenuItem(string id, Action action)
@@ -1018,6 +1033,7 @@ public sealed partial class MainForm : Form
         _miCloseToTray.Checked = settings.CloseToTray;
         _miTopMost.Checked = settings.TopMost;
         _miAutoUpdate.Checked = settings.AutoCheckUpdate;
+        _miDiagnostics.Checked = settings.Diagnostics;
         _suppressOptionFeedback = false;
 
         UpdateAutoSkipLabel();
@@ -1068,9 +1084,51 @@ public sealed partial class MainForm : Form
         _settings.CloseToTray = _miCloseToTray.Checked;
         _settings.TopMost = _miTopMost.Checked;
         _settings.AutoCheckUpdate = _miAutoUpdate.Checked;
+        _settings.Diagnostics = _miDiagnostics.Checked;
     }
 
     private void SaveOptionsQuietly() => _store.SaveOptions(_settings, out _);
+
+    // ---------------------------------------------------------------- 诊断日志
+
+    /// <summary>按开关启用 / 停用诊断日志；目录建不出来时静默放弃，绝不影响主流程。</summary>
+    private void ApplyDiagnostics(bool enabled)
+    {
+        if (!enabled)
+        {
+            DiagnosticLog.Current.Disable();
+            return;
+        }
+
+        try
+        {
+            DiagnosticLog.Current.Configure(DiagnosticLog.ResolveDirectory(AppContext.BaseDirectory));
+            DiagnosticLog.Current.Enable();
+        }
+        catch
+        {
+            // 日志开不起来就算了：诊断是锦上添花
+        }
+    }
+
+    /// <summary>打开日志文件夹；还没产生日志时给出引导提示。</summary>
+    private void OpenLogFolder()
+    {
+        try
+        {
+            string directory = DiagnosticLog.ResolveDirectory(AppContext.BaseDirectory);
+            if (!File.Exists(Path.Combine(directory, DiagnosticLog.FileName)))
+            {
+                SetStatus("status.logEmpty", Theme.Orange, Array.Empty<object>());
+            }
+
+            Process.Start(new ProcessStartInfo { FileName = directory, UseShellExecute = true })?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            SetStatus("status.logOpenFailed", Theme.Red, ex.Message);
+        }
+    }
 
     // ---------------------------------------------------------------- 按钮动作
 
@@ -1087,9 +1145,12 @@ public sealed partial class MainForm : Form
 
         if (!_store.SaveConfig(_settings, out string error))
         {
+            DiagnosticLog.Error("config", "配置保存失败：" + error);
             SetStatus("status.saveFailed", Theme.Red, error);
             return;
         }
+
+        DiagnosticLog.Info("config", $"配置已保存：{_store.Path}");
 
         // 注册失败必须说出来：否则界面说「已保存」，用户以为热键生效了，其实没有
         List<string> hotkeyProblems = RegisterHotkeys();
@@ -1113,6 +1174,7 @@ public sealed partial class MainForm : Form
         }
 
         _settings = _store.Load();
+        DiagnosticLog.Info("config", "配置已读取");
         ApplySettings(_settings);
         List<string> hotkeyProblems = RegisterHotkeys();
         RenderProgress(_settings.Slots);
@@ -1138,6 +1200,9 @@ public sealed partial class MainForm : Form
         // 确认有可用的目标窗口：按键总是发给前台窗口，如果九序自己在前台就没有意义
         IntPtr sendTarget = WindowsDesktop.ResolveSendTarget(_processId, Handle, _targetWindow);
         bool targetUsable = sendTarget != IntPtr.Zero && !WindowsDesktop.IsMinimized(sendTarget);
+        DiagnosticLog.Info("run", targetUsable
+            ? $"请求开始：目标窗口 0x{sendTarget.ToInt64():X} “{ShortenTitle(_targetTitle)}”"
+            : "请求开始：目标窗口不可用");
 
         var request = new StartRequest(
             slots,
@@ -1152,6 +1217,7 @@ public sealed partial class MainForm : Form
         StartPlan? plan = StartPlanner.TryCreate(request, out UiProblem? problem);
         if (plan == null)
         {
+            DiagnosticLog.Warn("run", $"开始被拒绝：{problem!.Key}");
             Beep(beepOn: true);
             ShowProblem(problem!);
             return;
@@ -1160,6 +1226,7 @@ public sealed partial class MainForm : Form
         // 校验全部通过后才按当前文本重注册热键：反过来的话，校验失败提前返回时
         // 旧热键已经被注销/替换，可能把原本能用的停止热键弄丢
         List<string> hotkeyProblems = RegisterHotkeys();
+        if (hotkeyProblems.Count > 0) DiagnosticLog.Warn("hotkey", string.Join("；", hotkeyProblems));
 
         if (!_engine.Start(plan, out string startError))
         {
@@ -1199,6 +1266,7 @@ public sealed partial class MainForm : Form
         // 这里再走一遍只会把「配置已保存」这类提示顶掉
         if (!_engine.IsRunning) return;
 
+        DiagnosticLog.Info("run", "用户请求停止");
         EngineStopResult? result = _engine.Stop();
 
         // 引擎没能在 3 秒内退出：按键还在发，绝不能把界面切成“已停止”
@@ -1239,6 +1307,7 @@ public sealed partial class MainForm : Form
         }
 
         _skipCountField.Value = string.Empty;
+        DiagnosticLog.Info("run", "进度已重置（各累计次数清零）");
 
         string? saveError = PersistProgress(_settings.Slots);
         RenderProgress(_settings.Slots);
@@ -1299,6 +1368,7 @@ public sealed partial class MainForm : Form
         if (problems.Count == 0) return;
 
         string summary = string.Join("；", problems);
+        DiagnosticLog.Warn("hotkey", "热键问题：" + summary);
         SetStatus(statusKey, Theme.Red, summary);
 
         // 气泡每次运行只弹一次，免得反复点保存时一直骚扰
@@ -1326,6 +1396,7 @@ public sealed partial class MainForm : Form
 
         if (!_keyCapture.Start())
         {
+            DiagnosticLog.Warn("capture", "键盘钩子装不上：录键不可用（可能被安全软件拦截）");
             SetStatus("status.captureFailed", Theme.Orange, UiText.T("capture.failed"));
             return;
         }
@@ -1474,6 +1545,10 @@ public sealed partial class MainForm : Form
     /// <summary>把一轮结束的结果画到界面上（进度、摘要、提示音、状态、错误框）。</summary>
     private void ApplyRunOutcome(RunOutcome outcome)
     {
+        DiagnosticLog.Info("run",
+            "一轮收尾：" + outcome.Kind +
+            (outcome.ProgressSaveError != null ? " · 进度保存失败：" + outcome.ProgressSaveError : string.Empty));
+
         RenderProgress(outcome.Slots);
         RefreshSummary();
         UpdateAutoSkipLabel();
@@ -1721,6 +1796,13 @@ public sealed partial class MainForm : Form
             WindowsDesktop.ActivateWindow(target);
             Thread.Sleep(80);
         }
+
+        // 四次都没切出去：按键大概率会打进九序自己的窗口
+        IntPtr final = WindowsDesktop.GetForegroundWindow();
+        if (final == IntPtr.Zero || WindowsDesktop.IsOwnProcessWindow(final, _processId))
+        {
+            DiagnosticLog.Warn("target", "开始连点前没能把焦点切回目标窗口，按键可能发进九序自己");
+        }
     }
 
     private void SetupTargetTracking()
@@ -1751,6 +1833,7 @@ public sealed partial class MainForm : Form
 
         _targetWindow = window;
         _targetTitle = title;
+        DiagnosticLog.Info("target", $"目标窗口：0x{window.ToInt64():X} “{title}”");
         RefreshSummary();
     }
 

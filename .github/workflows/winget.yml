@@ -1,0 +1,20 @@
+name: winget
+
+on:
+  release:
+    types: [released]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 发布新版本到 WinGet 社区仓库
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: chaotools.NineFlow
+          installers-regex: '\.exe$'
+          max-versions-to-keep: 5
+          token: ${{ secrets.WINGET_TOKEN }}

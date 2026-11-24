@@ -57,11 +57,15 @@ public sealed class HotkeyRegistry : IDisposable
                 ? HotkeyRegistrationError.AlreadyInUse
                 : HotkeyRegistrationError.Failed;
 
+            DiagnosticLog.Warn("hotkey",
+                $"注册 {def.Display}（id={id}）失败：{(error == HotkeyRegistrationError.AlreadyInUse ? "已被占用" : "错误码 " + win32Error)}");
+
             Restore(id, previous, ref error);
             return false;
         }
 
         _entries[id] = new Entry { Def = def, Handler = handler };
+        DiagnosticLog.Info("hotkey", $"注册 {def.Display}（id={id}）成功");
         return true;
     }
 
@@ -82,6 +86,7 @@ public sealed class HotkeyRegistry : IDisposable
 
         // 连旧的都装不回去了：状态比“注册失败”更糟，交给调用方去报告
         error = HotkeyRegistrationError.Failed;
+        DiagnosticLog.Error("hotkey", $"替换热键失败后，原来的热键（id={id}）也装不回去了");
     }
 
     public void Unregister(int id)
@@ -105,6 +110,7 @@ public sealed class HotkeyRegistry : IDisposable
         int id = wParam.ToInt32();
         if (!_entries.TryGetValue(id, out var entry)) return false;
 
+        DiagnosticLog.Info("hotkey", $"热键触发：id={id}（{entry.Def.Display}）");
         entry.Handler();
         return true;
     }

@@ -31,6 +31,9 @@ public sealed class AppSettings
     /// <summary>启动后自动检查 GitHub 上的新版本。</summary>
     public bool AutoCheckUpdate { get; set; } = true;
 
+    /// <summary>诊断日志：把关键动作记录到本地文件，便于排查问题。默认关闭。</summary>
+    public bool Diagnostics { get; set; }
+
     /// <summary>桌面快捷方式已创建过（首次运行创建一次，之后不再重复）。</summary>
     public bool ShortcutCreated { get; set; }
 
@@ -127,6 +130,7 @@ public sealed class SettingsStore
         settings.Beep = document.GetBoolOrNull("General", "Beep") ?? true;
         settings.TopMost = document.GetBoolOrNull("General", "TopMost") ?? false;
         settings.AutoCheckUpdate = document.GetBoolOrNull("General", "AutoCheckUpdate") ?? true;
+        settings.Diagnostics = document.GetBoolOrNull("General", "Diagnostics") ?? false;
         settings.ShortcutCreated = document.GetBoolOrNull("App", "ShortcutCreated") ?? false;
 
         return settings;
@@ -204,6 +208,7 @@ public sealed class SettingsStore
         document.Set("General", "Beep", settings.Beep ? "1" : "0");
         document.Set("General", "TopMost", settings.TopMost ? "1" : "0");
         document.Set("General", "AutoCheckUpdate", settings.AutoCheckUpdate ? "1" : "0");
+        document.Set("General", "Diagnostics", settings.Diagnostics ? "1" : "0");
     }
 
     /// <summary>保存累计进度（只写各行的 Done，不碰其它配置）。</summary>
