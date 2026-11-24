@@ -5,7 +5,7 @@
 #   .\build.ps1 -SkipTests     # 跳过测试
 #   .\build.ps1 -NoPublish     # 只编译并测试，不发布
 #
-# 输出：<项目根>\publish\NineFlow.exe（自包含单文件，目标机器无需安装 .NET）
+# 输出：<项目根>\publish\NineFlow.Wpf.exe（自包含单文件，目标机器无需安装 .NET）
 
 [CmdletBinding()]
 param(
@@ -44,12 +44,12 @@ Write-Host "使用 dotnet: $dotnet" -ForegroundColor Cyan
 
 Write-Host ""
 Write-Host "== 1/4 还原 ==" -ForegroundColor Cyan
-& $dotnet restore (Join-Path $root "src\NineFlow\NineFlow.csproj")
+& $dotnet restore (Join-Path $root "src\NineFlow.Wpf\NineFlow.Wpf.csproj")
 if ($LASTEXITCODE -ne 0) { throw "restore 失败" }
 
 Write-Host ""
 Write-Host "== 2/4 编译 ==" -ForegroundColor Cyan
-& $dotnet build (Join-Path $root "src\NineFlow\NineFlow.csproj") -c $Configuration --no-restore
+& $dotnet build (Join-Path $root "src\NineFlow.Wpf\NineFlow.Wpf.csproj") -c $Configuration --no-restore
 if ($LASTEXITCODE -ne 0) { throw "build 失败" }
 
 if (-not $SkipTests) {
@@ -75,10 +75,10 @@ Write-Host "== 4/4 发布单文件 exe ==" -ForegroundColor Cyan
 $publishDir = Join-Path $root "publish"
 if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
 
-& $dotnet publish (Join-Path $root "src\NineFlow\NineFlow.csproj") -c $Configuration -o $publishDir
+& $dotnet publish (Join-Path $root "src\NineFlow.Wpf\NineFlow.Wpf.csproj") -c $Configuration -o $publishDir
 if ($LASTEXITCODE -ne 0) { throw "publish 失败" }
 
-$exe = Join-Path $publishDir "NineFlow.exe"
+$exe = Join-Path $publishDir "NineFlow.Wpf.exe"
 if (-not (Test-Path $exe)) { throw "没有生成 $exe" }
 
 $sizeMb = [Math]::Round((Get-Item $exe).Length / 1MB, 1)
