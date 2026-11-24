@@ -64,6 +64,9 @@ public static class UiText
         ["switch.closeToTray"] = "关闭窗口时隐藏到托盘",
         ["switch.topMost"] = "窗口置顶",
         ["switch.autoUpdate"] = "启动时检查更新",
+        ["switch.diagnostics"] = "诊断日志",
+
+        ["menu.openLog"] = "打开日志文件夹",
 
         ["status.stopped"] = "状态：已停止。按 {0} 开始，{1} 停止，{2} 重置进度。",
         ["status.running"] = "状态：运行中。按 {0} 停止。",
@@ -177,11 +180,15 @@ public static class UiText
         ["tooltip.closeToTray"] = "点关闭按钮时隐藏到托盘继续运行，而不是退出程序。",
         ["tooltip.topMost"] = "让九序窗口始终显示在最前面。",
         ["tooltip.update"] = "到 GitHub 检查有没有新版本；发现新版可一键下载，确认后自动替换并重启，配置与进度会保留。",
-        ["tooltip.more"] = "保存 / 读取配置、检查更新和四个设置项都收在这里。",
+        ["tooltip.more"] = "保存 / 读取配置、检查更新和五个设置项都收在这里。",
         ["menu.enable"] = "开启",
         ["status.optionOn"] = "已开启：{0}",
         ["status.optionOff"] = "已关闭：{0}",
         ["tooltip.autoUpdate"] = "启动 3 秒后自动检查一次；只有发现新版本才会提示，检查失败不会打扰。",
+        ["tooltip.diagnostics"] = "把启动、热键、连点、更新等关键动作记到本地日志文件，方便排查“按键没反应”这类问题。日志只保存在本机，不上传。",
+        ["tooltip.openLog"] = "打开诊断日志所在的文件夹；日志默认关闭，需要先在下方开启。",
+        ["status.logEmpty"] = "还没有诊断日志。先在设置里开启「诊断日志」，复现一次问题后再来看。",
+        ["status.logOpenFailed"] = "无法打开日志文件夹：{0}",
 
 
         ["note.read"] = "读取配置文件失败：{0}",

@@ -27,6 +27,7 @@ internal static class Program
         RunGroup("HotkeyDef", HotkeyDefTests.Run);
         RunGroup("UiText", UiTextTests.Run);
         RunGroup("AppSettingsOptions", AppSettingsOptionsTests.Run);
+        RunGroup("Diagnostics", DiagnosticsTests.Run);
         RunGroup("ClickSession", ClickSessionTests.Run);
         RunGroup("ClickEngine", ClickEngineTests.Run);
         RunGroup("StartPlanner", StartPlannerTests.Run);
