@@ -78,7 +78,8 @@ public partial class MainWindow : Window
         }
 
         // Windows 关机 / 注销时直接退出并落盘，而不是藏进托盘被系统强杀
-        Application.Current.SessionEnding += (_, _) => _exiting = true;
+        // 全限定：UseWPF + UseWindowsForms 双开时，裸 Application 与 WinForms 歧义（CS0104）
+        System.Windows.Application.Current.SessionEnding += (_, _) => _exiting = true;
 
         _runCoordinator = new RunCoordinator(PersistProgress);
         _engine = new ClickEngine(new KeySender()) { PrepareSendTarget = RestoreTargetFocus };

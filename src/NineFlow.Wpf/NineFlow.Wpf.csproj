@@ -13,6 +13,13 @@
     <AssemblyName>NineFlow.Wpf</AssemblyName>
     <!-- 单文件发布时把 WPF 的原生依赖也塞进 exe，避免旁边散落一堆 cor3.dll -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- 发布形态与 WinForms 版一致：自包含单文件 + 压缩，build.ps1 无需额外参数 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
 
     <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
     <AssemblyTitle>九序 WPF</AssemblyTitle>
