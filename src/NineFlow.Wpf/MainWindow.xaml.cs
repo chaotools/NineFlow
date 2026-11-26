@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Media;
 using System.Windows;
 using System.Windows.Controls;
@@ -10,6 +12,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using NineFlow.Core;
 using WinForms = System.Windows.Forms;
+using MenuItem = System.Windows.Controls.MenuItem;
 
 namespace NineFlow.Wpf;
 
@@ -63,6 +66,11 @@ public partial class MainWindow : Window
 
         _store = new SettingsStore(SettingsStore.DefaultIniPath(AppContext.BaseDirectory));
         _settings = _store.Load();
+
+        // 诊断日志按配置开关；开启后从这里开始记录（含启动信息）
+        ApplyDiagnostics(_settings.Diagnostics);
+        DiagnosticLog.Info("app", $"启动：ini {(_store.Exists ? "已加载 " : "不存在 ")}{_store.Path} · exe {Environment.ProcessPath}");
+
         if (!_store.Exists) _store.SaveConfig(_settings, out _);
 
         // 首次运行静默创建桌面快捷方式；成功才写标记，失败的话下次启动会再试一次
@@ -353,6 +361,7 @@ public partial class MainWindow : Window
         MiCloseToTray.IsChecked = settings.CloseToTray;
         MiTopMost.IsChecked = settings.TopMost;
         MiAutoUpdate.IsChecked = settings.AutoCheckUpdate;
+        MiDiagnostics.IsChecked = settings.Diagnostics;
         _suppressOption = false;
 
         UpdateAutoSkipLabel();
@@ -441,6 +450,7 @@ public partial class MainWindow : Window
         _settings.CloseToTray = MiCloseToTray.IsChecked;
         _settings.TopMost = MiTopMost.IsChecked;
         _settings.AutoCheckUpdate = MiAutoUpdate.IsChecked;
+        _settings.Diagnostics = MiDiagnostics.IsChecked;
     }
 
     private void SaveOptionsQuietly() => _store.SaveOptions(_settings, out _);
@@ -516,13 +526,53 @@ public partial class MainWindow : Window
         _settings.CloseToTray = MiCloseToTray.IsChecked;
         _settings.TopMost = MiTopMost.IsChecked;
         _settings.AutoCheckUpdate = MiAutoUpdate.IsChecked;
+        _settings.Diagnostics = MiDiagnostics.IsChecked;
         Topmost = _settings.TopMost;
+        ApplyDiagnostics(_settings.Diagnostics);
         SaveOptionsQuietly();
 
         var item = sender as MenuItem;
         string name = item?.Header?.ToString() ?? string.Empty;
         bool on = item?.IsChecked ?? false;
         SetStatus(on ? "status.optionOn" : "status.optionOff", on ? "GreenBrush" : "TextSecondaryBrush", name);
+    }
+
+    private void ApplyDiagnostics(bool enabled)
+    {
+        if (!enabled)
+        {
+            DiagnosticLog.Current.Disable();
+            return;
+        }
+
+        try
+        {
+            DiagnosticLog.Current.Configure(DiagnosticLog.ResolveDirectory(AppContext.BaseDirectory));
+            DiagnosticLog.Current.Enable();
+        }
+        catch
+        {
+            DiagnosticLog.Current.Disable();
+        }
+    }
+
+    private void OpenLogFolder_Click(object sender, RoutedEventArgs e)
+    {
+        string directory = DiagnosticLog.ResolveDirectory(AppContext.BaseDirectory);
+        if (!File.Exists(Path.Combine(directory, DiagnosticLog.FileName)))
+        {
+            SetStatus("status.logEmpty", "OrangeBrush");
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{directory}\"") { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            SetStatus("status.logOpenFailed", "RedBrush", ex.Message);
+        }
     }
 
     private void AddSlot_Click(object sender, RoutedEventArgs e)
@@ -565,6 +615,7 @@ public partial class MainWindow : Window
 
     private void StartClicking()
     {
+        DiagnosticLog.Info("run", "用户请求开始");
         if (_closing || _engine.IsRunning) return;
 
         CancelKeyCapture(restoreValue: true);
@@ -627,6 +678,8 @@ public partial class MainWindow : Window
     {
         if (_closing) return;
         if (!_engine.IsRunning) return;
+
+        DiagnosticLog.Info("run", "用户请求停止");
 
         EngineStopResult? result = _engine.Stop();
 
@@ -720,6 +773,7 @@ public partial class MainWindow : Window
         if (problems.Count == 0) return;
 
         string summary = string.Join("；", problems);
+        DiagnosticLog.Warn("hotkey", "热键问题：" + summary);
         SetStatus(statusKey, "RedBrush", summary);
 
         if (_hotkeyProblemShown) return;
@@ -984,9 +1038,11 @@ public partial class MainWindow : Window
             int rowIndex = slot.Index - 1;
             if (rowIndex >= 0 && rowIndex < Rows.Count)
             {
-                Rows[rowIndex].ProgressText = slot.MaxCount > 0
-                    ? slot.RunCount + "/" + slot.MaxCount
-                    : (slot.RunCount > 0 ? slot.RunCount.ToString(CultureInfo.InvariantCulture) : "∞");
+                Rows[rowIndex].ProgressText = !isActive
+                    ? "—"
+                    : slot.MaxCount > 0
+                        ? slot.RunCount + "/" + slot.MaxCount
+                        : (slot.RunCount > 0 ? slot.RunCount.ToString(CultureInfo.InvariantCulture) : "∞");
             }
 
             if (!isActive) continue;
@@ -1106,6 +1162,7 @@ public partial class MainWindow : Window
 
         _targetWindow = window;
         _targetTitle = title;
+        DiagnosticLog.Info("target", $"目标窗口：0x{window.ToInt64():X} “{title}”");
         RefreshSummary();
     }
 

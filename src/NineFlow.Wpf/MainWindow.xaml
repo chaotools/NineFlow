@@ -41,12 +41,12 @@
                            Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" />
             </StackPanel>
 
-            <Button x:Name="BtnStart" Grid.Column="1" Content="开始连点"
+            <Button x:Name="BtnStart" AutomationProperties.AutomationId="button.start" Grid.Column="1" Content="开始连点"
                     Style="{StaticResource PrimaryButton}" Width="92" Height="30"
                     FontSize="12" Margin="18,0,8,0"
                     ToolTip="{Binding Text, ElementName=TxtSummary}" />
 
-            <Button x:Name="BtnReset" Grid.Column="2" Content="重置"
+            <Button x:Name="BtnReset" AutomationProperties.AutomationId="button.reset" Grid.Column="2" Content="重置"
                     Style="{StaticResource SecondaryButton}" Width="64" Height="30"
                     FontSize="12" />
 
@@ -172,7 +172,7 @@
 
         <!-- ============ 添加一行 ============ -->
         <StackPanel Grid.Row="3" Orientation="Horizontal" VerticalAlignment="Center">
-            <Button x:Name="BtnAddSlot" Content="＋ 添加一行" Style="{StaticResource AddRowButton}"
+            <Button x:Name="BtnAddSlot" AutomationProperties.AutomationId="button.addSlot" Content="＋ 添加一行" Style="{StaticResource AddRowButton}"
                     Click="AddSlot_Click" Width="98" />
             <TextBlock Text="点按键后直接按下目标键，Esc 取消 · 最少 2 行，最多 20 行"
                        FontSize="10" Foreground="{StaticResource TextFaintBrush}"
@@ -196,18 +196,18 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBox x:Name="TxtHotkeyOn" Style="{StaticResource KbdBox}" Text="F7" Width="34" />
+                    <TextBox x:Name="TxtHotkeyOn" AutomationProperties.AutomationId="hotkey.start" Style="{StaticResource KbdBox}" Text="F7" Width="34" />
                     <TextBlock Text="启动" Style="{StaticResource ChipLabel}" />
-                    <TextBox x:Name="TxtHotkeyOff" Style="{StaticResource KbdBox}" Text="F8" Width="34" />
+                    <TextBox x:Name="TxtHotkeyOff" AutomationProperties.AutomationId="hotkey.stop" Style="{StaticResource KbdBox}" Text="F8" Width="34" />
                     <TextBlock Text="停止" Style="{StaticResource ChipLabel}" />
-                    <TextBox x:Name="TxtHotkeyReset" Style="{StaticResource KbdBox}" Text="F9" Width="34" />
+                    <TextBox x:Name="TxtHotkeyReset" AutomationProperties.AutomationId="hotkey.reset" Style="{StaticResource KbdBox}" Text="F9" Width="34" />
                     <TextBlock Text="重置" Style="{StaticResource ChipLabel}" />
-                    <TextBox x:Name="TxtSkipKey" Style="{StaticResource KbdBox}" Text="Down" Width="46" />
+                    <TextBox x:Name="TxtSkipKey" AutomationProperties.AutomationId="hotkey.skipkey" Style="{StaticResource KbdBox}" Text="Down" Width="46" />
                     <TextBlock Text="跳过" Style="{StaticResource ChipLabel}" />
 
                     <TextBlock Text="跳过数" Style="{StaticResource ChipLabel}" Margin="6,0,5,0" />
                     <Grid Width="36" Height="22" VerticalAlignment="Center">
-                        <TextBox x:Name="TxtSkipCount" Style="{StaticResource KbdBox}" Width="36" />
+                        <TextBox x:Name="TxtSkipCount" AutomationProperties.AutomationId="hotkey.skipcount" Style="{StaticResource KbdBox}" Width="36" />
                         <TextBlock Text="自动" FontSize="10" IsHitTestVisible="False"
                                    Foreground="{StaticResource TextFaintBrush}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -228,7 +228,7 @@
                                Margin="0,0,10,0" Text="留空 = 自动（当前 0 项）" />
                 </StackPanel>
 
-                <Button x:Name="BtnMenu" Grid.Column="2" Content="设置 ▾"
+                <Button x:Name="BtnMenu" AutomationProperties.AutomationId="button.more" Grid.Column="2" Content="设置 ▾"
                         Style="{StaticResource QuietButton}" Width="62" Height="26"
                         FontSize="10.5" VerticalAlignment="Center" Click="BtnMenu_Click">
                     <Button.ContextMenu>
@@ -241,6 +241,9 @@
                             <MenuItem x:Name="MiCloseToTray" Header="关闭窗口时隐藏到托盘" IsCheckable="True" Click="Option_Click" />
                             <MenuItem x:Name="MiTopMost" Header="窗口置顶" IsCheckable="True" Click="Option_Click" />
                             <MenuItem x:Name="MiAutoUpdate" Header="启动时检查更新" IsCheckable="True" Click="Option_Click" />
+                            <MenuItem x:Name="MiDiagnostics" Header="诊断日志" IsCheckable="True" Click="Option_Click" />
+                            <Separator />
+                            <MenuItem x:Name="MenuOpenLog" Header="打开日志文件夹" Click="OpenLogFolder_Click" />
                         </ContextMenu>
                     </Button.ContextMenu>
                 </Button>
@@ -254,7 +257,7 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <TextBlock x:Name="TxtState" Grid.Column="0" FontSize="10.5"
+            <TextBlock x:Name="TxtState" AutomationProperties.AutomationId="status.state" Grid.Column="0" FontSize="10.5"
                        Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"
                        TextTrimming="CharacterEllipsis" Text="状态：已停止。" />
 
@@ -280,7 +283,7 @@
         </Grid>
 
         <!-- 代码仍会写这两个元素，但这一版不显示：摘要挂在开始按钮的提示里，明细挂在读数上 -->
-        <TextBlock x:Name="TxtSummary" Visibility="Collapsed" Text="本次执行：未勾选任何行" />
+        <TextBlock x:Name="TxtSummary" AutomationProperties.AutomationId="status.summary" Visibility="Collapsed" Text="本次执行：未勾选任何行" />
         <TextBlock x:Name="TxtProgress" Visibility="Collapsed" Text="暂无启用的按键。" />
     </Grid>
 </Window>

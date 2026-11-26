@@ -1,7 +1,7 @@
 # NineFlow.Wpf — WPF 界面层（方案 2）
 
 只替换界面层：`NineFlow.Core`（引擎、热键、录键、INI、校验、更新）**一行未改**，
-`tests` 下的 499 项测试照旧通过。原 `src/NineFlow`（WinForms）保持原样，可并行运行。
+500 项逻辑测试（完整 532 项）照旧通过。原 `src/NineFlow`（WinForms）保留对照，默认构建不再使用。
 
 ## 为什么是 WPF
 
@@ -32,12 +32,10 @@ WPF 版把布局交给容器：根 Grid 6 行（顶栏 44 / 列头 26 / 行区 `
 dotnet build src/NineFlow.Wpf/NineFlow.Wpf.csproj -c Debug
 
 # 自包含单文件（不依赖本机 .NET 运行时）
-dotnet publish src/NineFlow.Wpf/NineFlow.Wpf.csproj -c Release -r win-x64 `
-  --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true `
-  -o publish/wpf
+dotnet publish src/NineFlow.Wpf/NineFlow.Wpf.csproj -c Release -o publish
 ```
 
-产物：`publish/wpf/NineFlow.Wpf.exe`（约 62 MB，双击即可运行）。
+产物：`publish/NineFlow.exe`（约 66.5 MB，双击即可运行）。
 
 ## 与 WinForms 版的差异
 
@@ -50,11 +48,12 @@ dotnet publish src/NineFlow.Wpf/NineFlow.Wpf.csproj -c Release -r win-x64 `
 - 快捷键与续点压成页脚一行键帽（F7 启动 / F8 停止 / F9 重置 / Down 跳过）+「设置 ▾」。
 - 设置菜单改为扁平菜单（`提示音` / `关闭窗口时隐藏到托盘` / `窗口置顶` / `启动时检查更新`），
   顶栏齿轮与页脚按钮共用同一份菜单，均从按钮下方弹出。
-- 单实例命名区分：`Local\NineFlow.Wpf.SingleInstance.v1` / `Local\NineFlow.Wpf.ShowWindow.v1`，
-  因此两版可同时运行，各自读写自己目录下的 `NineFlow.ini`。
+- 单实例命名与 WinForms 版一致（`Local\NineFlow.SingleInstance.v1`），旧版在运行时新版会直接唤回已有窗口，
+  不会同时发送按键。
+- `app.manifest` 声明 `requireAdministrator` 与 PerMonitorV2：双击弹 UAC，高 DPI 下不糊。
 
-## 还没做
+## 接入状态
 
-1. 尚未写进 `build.ps1`、`使用说明.md`、根 `README.md` 与 `tools/e2e-v2.ps1`。
-2. 尚未替换 `publish/NineFlow.exe`（当前是新增目录 `publish/wpf/`，未覆盖）。
-3. 两版是否共用同一份 `NineFlow.ini`（目前按 exe 目录各自独立）仍待决定。
+1. `build.ps1`、GitHub Actions（build / release / CodeQL）已切到本工程，产物仍为 `NineFlow.exe`。
+2. 根 `README.md`、`使用说明.md` 与截图已按 WPF 界面更新。
+3. `tools/e2e-v2.ps1` 仍按旧 WinForms 界面编写，需要单独更新后再跑；核心与逻辑测试不受影响。

@@ -32,7 +32,7 @@ jobs:
           languages: csharp
 
       - name: 编译
-        run: dotnet build src/NineFlow/NineFlow.csproj -c Release
+        run: dotnet build src/NineFlow.Wpf/NineFlow.Wpf.csproj -c Release
 
       - name: 安全分析
         uses: github/codeql-action/analyze@v4

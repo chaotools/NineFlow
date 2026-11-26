@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <!-- 托盘图标仍用 WinForms 的 NotifyIcon；WPF 自带没有托盘 API -->
     <UseWindowsForms>true</UseWindowsForms>
@@ -10,7 +10,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <RootNamespace>NineFlow.Wpf</RootNamespace>
-    <AssemblyName>NineFlow.Wpf</AssemblyName>
+    <!-- WPF 的 PerMonitorV2 由 app.manifest 声明；UseWindowsForms 只是为了托盘图标 -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <AssemblyName>NineFlow</AssemblyName>
     <!-- 单文件发布时把 WPF 的原生依赖也塞进 exe，避免旁边散落一堆 cor3.dll -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <!-- 发布形态与 WinForms 版一致：自包含单文件 + 压缩，build.ps1 无需额外参数 -->
@@ -22,9 +24,10 @@
     <DebugSymbols>false</DebugSymbols>
 
     <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
-    <AssemblyTitle>九序 WPF</AssemblyTitle>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyTitle>九序</AssemblyTitle>
     <Product>九序</Product>
-    <Description>九序 · 多键连发 · 智能续点 · 转发助手（WPF 界面层）</Description>
+    <Description>九序 · 多键连发 · 智能续点 · 转发助手</Description>
     <Company>NineFlow</Company>
     <Version>1.1.7</Version>
     <FileVersion>1.1.7.0</FileVersion>

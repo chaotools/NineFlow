@@ -5,7 +5,7 @@
 #   .\build.ps1 -SkipTests     # 跳过测试
 #   .\build.ps1 -NoPublish     # 只编译并测试，不发布
 #
-# 输出：<项目根>\publish\NineFlow.Wpf.exe（自包含单文件，目标机器无需安装 .NET）
+# 输出：<项目根>\publish\NineFlow.exe（自包含单文件，目标机器无需安装 .NET）
 
 [CmdletBinding()]
 param(
@@ -78,7 +78,7 @@ if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
 & $dotnet publish (Join-Path $root "src\NineFlow.Wpf\NineFlow.Wpf.csproj") -c $Configuration -o $publishDir
 if ($LASTEXITCODE -ne 0) { throw "publish 失败" }
 
-$exe = Join-Path $publishDir "NineFlow.Wpf.exe"
+$exe = Join-Path $publishDir "NineFlow.exe"
 if (-not (Test-Path $exe)) { throw "没有生成 $exe" }
 
 $sizeMb = [Math]::Round((Get-Item $exe).Length / 1MB, 1)

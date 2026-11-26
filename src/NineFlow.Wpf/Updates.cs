@@ -63,6 +63,7 @@ public partial class MainWindow
 
         _updateBusy = true;
         MiUpdate.IsEnabled = false;
+        DiagnosticLog.Info("update", (manual ? "手动" : "自动") + "检查更新开始");
 
         try
         {
@@ -72,15 +73,19 @@ public partial class MainWindow
 
             if (result.Status == UpdateCheckStatus.Failed)
             {
+                DiagnosticLog.Warn("update", "检查更新失败：" + (result.Error ?? "未知原因"));
                 if (manual) SetStatus("status.updateCheckFailed", "OrangeBrush", result.Error ?? string.Empty);
                 return;
             }
 
             if (result.Status == UpdateCheckStatus.UpToDate || result.Release is not { } release)
             {
+                DiagnosticLog.Info("update", $"已是最新版（{VersionText(result.CurrentVersion)}）");
                 if (manual) SetStatus("status.upToDate", "GreenBrush", VersionText(result.CurrentVersion));
                 return;
             }
+
+            DiagnosticLog.Info("update", $"发现新版本 {VersionText(release.Version)}（当前 {VersionText(result.CurrentVersion)}）");
 
             // 运行中绝不弹模态框：否则 SendInput 会打进九序自己的对话框
             if (_engine.IsRunning)
@@ -121,6 +126,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            DiagnosticLog.Warn("update", "检查更新异常：" + ex.Message);
             if (manual) SetStatus("status.updateCheckFailed", "OrangeBrush", ex.Message);
         }
         finally
@@ -149,10 +155,12 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            DiagnosticLog.Error("update", "更新包下载失败：" + ex.Message);
             ShowUpdateFailure(ex.Message);
             return;
         }
 
+        DiagnosticLog.Info("update", $"更新包下载完成：{downloadedPath}");
         SetStatus("status.updateReady", "GreenBrush");
 
         string exePath = Environment.ProcessPath
@@ -161,10 +169,12 @@ public partial class MainWindow
 
         if (!UpdateInstaller.TryStart(exePath, downloadedPath, _processId, out string error))
         {
+            DiagnosticLog.Error("update", "替换脚本启动失败：" + error);
             ShowUpdateFailure(error);
             return;
         }
 
+        DiagnosticLog.Info("update", "替换脚本已启动，主程序退出等待重启");
         _exiting = true;
         Close();
     }

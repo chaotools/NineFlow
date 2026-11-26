@@ -10,8 +10,8 @@ namespace NineFlow.Wpf;
 /// </summary>
 public partial class App : System.Windows.Application
 {
-    private const string MutexName = @"Local\NineFlow.Wpf.SingleInstance.v1";
-    private const string ShowEventName = @"Local\NineFlow.Wpf.ShowWindow.v1";
+    private const string MutexName = @"Local\NineFlow.SingleInstance.v1";
+    private const string ShowEventName = @"Local\NineFlow.ShowWindow.v1";
 
     private Mutex? _mutex;
     private EventWaitHandle? _showEvent;
@@ -81,6 +81,15 @@ public partial class App : System.Windows.Application
 
     private static void ShowFatalError(Exception? exception)
     {
+        try
+        {
+            NineFlow.Core.DiagnosticLog.Exception("崩溃", exception);
+        }
+        catch
+        {
+            // 诊断日志失败不影响原有的临时目录日志
+        }
+
         try
         {
             string logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "NineFlow-wpf-error.log");
