@@ -1,7 +1,7 @@
 # 九序 / NineFlow —— 发布版 exe 端到端测试（v2：托盘、勾选过滤、热键、置顶）
 param(
     [string]$ExePath = "C:\Users\0409\Documents\NineFlow\publish\NineFlow.exe",
-    [string]$KeyCatcherExe = "C:\Users\0409\Documents\NineFlow\tests\KeyCatcher\bin\Release\net8.0-windows\KeyCatcher.exe",
+    [string]$KeyCatcherExe = "C:\Users\0409\Documents\NineFlow\tests\KeyCatcher\bin\Release\net10.0-windows\KeyCatcher.exe",
     [string]$WorkDir = "C:\Users\0409\Documents\NineFlow\artifacts\e2e-v2"
 )
 

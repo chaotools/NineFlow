@@ -20,10 +20,10 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v7
 
-      - name: 安装 .NET 8
+      - name: 安装 .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       - name: 校验版本号与标签一致
         shell: pwsh
@@ -42,7 +42,7 @@ jobs:
         run: dotnet build tests/NineFlow.Tests/NineFlow.Tests.csproj -c Release
 
       - name: 运行逻辑测试
-        run: dotnet tests/NineFlow.Tests/bin/Release/net8.0-windows/NineFlow.Tests.dll --skip-integration
+        run: dotnet tests/NineFlow.Tests/bin/Release/net10.0-windows/NineFlow.Tests.dll --skip-integration
 
       - name: 发布单文件 exe
         run: dotnet publish src/NineFlow/NineFlow.csproj -c Release -o publish
