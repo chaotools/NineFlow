@@ -31,7 +31,7 @@ jobs:
           $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.tag }}') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
           $tag = $tag.Trim()
           $version = $tag.TrimStart('v')
-          [xml]$project = Get-Content 'src/NineFlow/NineFlow.csproj'
+          [xml]$project = Get-Content 'src/NineFlow.Wpf/NineFlow.Wpf.csproj'
           $declared = @($project.Project.PropertyGroup.Version | Where-Object { $_ }) | Select-Object -First 1
           if ($declared -ne $version) {
             throw "csproj 版本 $declared 与标签 $tag 不一致，请先更新版本号再打标签"
@@ -45,7 +45,7 @@ jobs:
         run: dotnet tests/NineFlow.Tests/bin/Release/net10.0-windows/NineFlow.Tests.dll --skip-integration
 
       - name: 发布单文件 exe
-        run: dotnet publish src/NineFlow/NineFlow.csproj -c Release -o publish
+        run: dotnet publish src/NineFlow.Wpf/NineFlow.Wpf.csproj -c Release -o publish
 
       - name: 准备发布资产
         shell: pwsh

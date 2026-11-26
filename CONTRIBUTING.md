@@ -38,7 +38,7 @@ dotnet tests\NineFlow.Tests\bin\Release\net10.0-windows\NineFlow.Tests.dll --ski
 ## 发版流程
 
 1. 修改 `CHANGELOG.md`，把 `[Unreleased]` 内容整理到新版本小节
-2. 更新 `src/NineFlow/NineFlow.csproj` 里的版本号（`Version` / `FileVersion` / `AssemblyVersion`）
+2. 更新 `src/NineFlow.Wpf/NineFlow.Wpf.csproj` 里的版本号（`Version` / `FileVersion` / `AssemblyVersion`）
 3. 提交到分支并开 PR（`main` 受规则集保护：必须走 PR、build 检查通过、线性历史），合并后再继续
 4. 打标签并推送：`git tag v1.1.x && git push origin v1.1.x`
 5. CI 会自动校验版本号、跑测试、打包、创建 GitHub Release（README 的 release 徽章由 shields.io 动态读取，无需手工维护）

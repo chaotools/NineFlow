@@ -7,7 +7,7 @@
       "command": "C:\\Users\\0409\\dotnet\\dotnet.exe",
       "args": [
         "build",
-        "${workspaceFolder}/src/NineFlow/NineFlow.csproj",
+        "${workspaceFolder}/src/NineFlow.Wpf/NineFlow.Wpf.csproj",
         "-c",
         "Debug"
       ],
@@ -24,7 +24,7 @@
       "args": [
         "run",
         "--project",
-        "${workspaceFolder}/src/NineFlow/NineFlow.csproj"
+        "${workspaceFolder}/src/NineFlow.Wpf/NineFlow.Wpf.csproj"
       ],
       "group": "build",
       "problemMatcher": "$msCompile"

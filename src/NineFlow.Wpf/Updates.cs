@@ -1,27 +1,27 @@
+using System.Diagnostics;
 using System.Globalization;
-using System.Windows.Forms;
+using System.IO;
+using System.Windows;
 using NineFlow.Core;
 
-namespace NineFlow;
+namespace NineFlow.Wpf;
 
 /// <summary>
-/// 检查更新与静默安装。独立成 partial，避免 MainForm.cs 继续变长。
-/// 流程：检查 GitHub Release → 有新版弹窗确认 → 下载并校验 → 启动替换脚本 → 退出主程序。
+/// 检查更新与静默安装：
+/// 检查 GitHub Release → 有新版确认 → 下载校验 → 启动替换脚本 → 退出由脚本重启。
 /// </summary>
-public sealed partial class MainForm
+public partial class MainWindow
 {
-    /// <summary>当前程序版本（只取主/次/修订）。</summary>
     private static Version CurrentVersion =>
-        UpdateService.Normalize(typeof(MainForm).Assembly.GetName().Version ?? new Version(0, 0, 0));
+        UpdateService.Normalize(typeof(MainWindow).Assembly.GetName().Version ?? new Version(0, 0, 0));
 
-    protected override void OnShown(EventArgs e)
+    private void OnLoadedForUpdates()
     {
-        base.OnShown(e);
         ReportPreviousUpdateFailure();
         if (_settings.AutoCheckUpdate) _ = AutoCheckForUpdatesAsync();
     }
 
-    /// <summary>上次替换脚本失败会留下日志：启动时提示一次并清理，避免“点了更新却什么都没发生”。</summary>
+    /// <summary>上次替换脚本失败会留下日志：启动时提示一次并清理。</summary>
     private void ReportPreviousUpdateFailure()
     {
         string logPath = Path.Combine(UpdateInstaller.WorkDirectory, "apply-update.log");
@@ -36,72 +36,69 @@ public sealed partial class MainForm
             // 删不掉不影响提示
         }
 
-        SetStatus("status.previousUpdateFailed", Theme.Orange, Array.Empty<object>());
+        SetStatus("status.previousUpdateFailed", "OrangeBrush");
     }
 
-    /// <summary>启动后延迟几秒再查，避免和窗口初始化抢时间；失败保持静默。</summary>
     private async Task AutoCheckForUpdatesAsync()
     {
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(3));
-            if (_closing || IsDisposed || _updateBusy || _engine.IsRunning) return;
+            if (_closing || _updateBusy || _engine.IsRunning) return;
             await CheckForUpdatesAsync(manual: false);
         }
         catch
         {
-            // 自动检查失败不打扰用户
+            // 自动检查失败不打扰
         }
     }
+
+    private void CheckUpdate_Click(object sender, RoutedEventArgs e) => _ = CheckForUpdatesAsync(manual: true);
 
     private async Task CheckForUpdatesAsync(bool manual)
     {
         if (_updateBusy || _closing) return;
 
-        // 录键时钩子会吞掉键盘输入，弹出来的确认框没法用键盘操作；先收掉再检查
         if (_keyCapture.IsCapturing) CancelKeyCapture(restoreValue: true);
 
         _updateBusy = true;
-        _miUpdate.Enabled = false;
+        MiUpdate.IsEnabled = false;
         DiagnosticLog.Info("update", (manual ? "手动" : "自动") + "检查更新开始");
 
         try
         {
-            if (manual) SetStatus("status.checkingUpdate", Theme.TextSecondary);
+            if (manual) SetStatus("status.checkingUpdate", "TextSecondaryBrush");
 
             UpdateCheckResult result = await UpdateService.CheckAsync(CurrentVersion);
 
             if (result.Status == UpdateCheckStatus.Failed)
             {
                 DiagnosticLog.Warn("update", "检查更新失败：" + (result.Error ?? "未知原因"));
-                if (manual) SetStatus("status.updateCheckFailed", Theme.Orange, result.Error ?? string.Empty);
+                if (manual) SetStatus("status.updateCheckFailed", "OrangeBrush", result.Error ?? string.Empty);
                 return;
             }
 
             if (result.Status == UpdateCheckStatus.UpToDate || result.Release is not { } release)
             {
                 DiagnosticLog.Info("update", $"已是最新版（{VersionText(result.CurrentVersion)}）");
-                if (manual) SetStatus("status.upToDate", Theme.Green, VersionText(result.CurrentVersion));
+                if (manual) SetStatus("status.upToDate", "GreenBrush", VersionText(result.CurrentVersion));
                 return;
             }
 
-            // 自动检查可能在用户开始连点之后才拿到结果：这时绝不能弹模态框抢走前台窗口，
-            // 否则后续 SendInput 会打进九序自己的对话框。运行中只给手动检查留一条状态提示。
+            DiagnosticLog.Info("update", $"发现新版本 {VersionText(release.Version)}（当前 {VersionText(result.CurrentVersion)}）");
+
+            // 运行中绝不弹模态框：否则 SendInput 会打进九序自己的对话框
             if (_engine.IsRunning)
             {
                 if (manual)
                 {
-                    SetStatus(
-                        "status.updateAvailableRunning",
-                        Theme.Accent,
-                        VersionText(release.Version),
-                        VersionText(result.CurrentVersion));
+                    SetStatus("status.updateAvailableRunning", "AccentBrush",
+                        VersionText(release.Version), VersionText(result.CurrentVersion));
                 }
 
                 return;
             }
 
-            // 检查期间用户可能刚好开始录键：弹模态框前也必须把钩子收掉，否则键盘全被吞
             if (_keyCapture.IsCapturing) CancelKeyCapture(restoreValue: true);
 
             string text = UiText.T(
@@ -110,22 +107,18 @@ public sealed partial class MainForm
                 VersionText(release.Version),
                 FormatSize(release.Size));
 
-            DialogResult answer = MessageBox.Show(
+            MessageBoxResult answer = System.Windows.MessageBox.Show(
                 this,
                 text,
                 UiText.T("dialog.update.title"),
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Information,
-                MessageBoxDefaultButton.Button1);
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information,
+                MessageBoxResult.Yes);
 
-            if (answer != DialogResult.Yes)
+            if (answer != MessageBoxResult.Yes)
             {
-                DiagnosticLog.Info("update", "用户取消了更新");
-                SetStatus(
-                    "status.updateAvailable",
-                    Theme.Accent,
-                    VersionText(release.Version),
-                    VersionText(result.CurrentVersion));
+                SetStatus("status.updateAvailable", "AccentBrush",
+                    VersionText(release.Version), VersionText(result.CurrentVersion));
                 return;
             }
 
@@ -134,16 +127,15 @@ public sealed partial class MainForm
         catch (Exception ex)
         {
             DiagnosticLog.Warn("update", "检查更新异常：" + ex.Message);
-            if (manual) SetStatus("status.updateCheckFailed", Theme.Orange, ex.Message);
+            if (manual) SetStatus("status.updateCheckFailed", "OrangeBrush", ex.Message);
         }
         finally
         {
             _updateBusy = false;
-            if (!_closing && !IsDisposed) _miUpdate.Enabled = !_engine.IsRunning;
+            if (!_closing) MiUpdate.IsEnabled = !_engine.IsRunning;
         }
     }
 
-    /// <summary>下载、校验、交给替换脚本；成功返回后主程序退出，由脚本重启。</summary>
     private async Task DownloadAndApplyAsync(UpdateRelease release)
     {
         string fileName = Path.GetFileName(release.AssetName);
@@ -152,10 +144,10 @@ public sealed partial class MainForm
         var progress = new Progress<int>(percent =>
         {
             if (_closing) return;
-            SetStatus("status.downloading", Theme.Accent, VersionText(release.Version), percent);
+            SetStatus("status.downloading", "AccentBrush", VersionText(release.Version), percent);
         });
 
-        SetStatus("status.downloading", Theme.Accent, VersionText(release.Version), 0);
+        SetStatus("status.downloading", "AccentBrush", VersionText(release.Version), 0);
 
         try
         {
@@ -169,9 +161,13 @@ public sealed partial class MainForm
         }
 
         DiagnosticLog.Info("update", $"更新包下载完成：{downloadedPath}");
-        SetStatus("status.updateReady", Theme.Green);
+        SetStatus("status.updateReady", "GreenBrush");
 
-        if (!UpdateInstaller.TryStart(Application.ExecutablePath, downloadedPath, _processId, out string error))
+        string exePath = Environment.ProcessPath
+                         ?? Process.GetCurrentProcess().MainModule?.FileName
+                         ?? string.Empty;
+
+        if (!UpdateInstaller.TryStart(exePath, downloadedPath, _processId, out string error))
         {
             DiagnosticLog.Error("update", "替换脚本启动失败：" + error);
             ShowUpdateFailure(error);
@@ -179,20 +175,19 @@ public sealed partial class MainForm
         }
 
         DiagnosticLog.Info("update", "替换脚本已启动，主程序退出等待重启");
-
         _exiting = true;
         Close();
     }
 
     private void ShowUpdateFailure(string message)
     {
-        SetStatus("status.updateFailed", Theme.Red, message);
-        MessageBox.Show(
+        SetStatus("status.updateFailed", "RedBrush", message);
+        System.Windows.MessageBox.Show(
             this,
             UiText.T("dialog.updateFailed.text", message),
             UiText.T("dialog.updateFailed.title"),
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Warning);
+            MessageBoxButton.OK,
+            MessageBoxImage.Warning);
     }
 
     private static string VersionText(Version version) =>

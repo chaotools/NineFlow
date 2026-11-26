@@ -1,6 +1,7 @@
+using System.IO;
 using NineFlow.Core;
 
-namespace NineFlow;
+namespace NineFlow.Wpf;
 
 /// <summary>
 /// 桌面快捷方式：首次运行静默创建一次（NineFlow.ini 里有 [App] ShortcutCreated=1 标记就不再动）。

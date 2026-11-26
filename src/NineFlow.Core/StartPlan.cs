@@ -26,7 +26,7 @@ public sealed record UiProblem(string Key, object[] Args, UiProblemSeverity Seve
 
 /// <summary>
 /// 一次「开始连点」的原始输入：界面文本 + 已解析的行 + 目标窗口是否可用。
-/// 全是数据、不依赖 WinForms，所以可以在控制台里直接测。
+/// 全是数据、不依赖 UI 框架，所以可以在控制台里直接测。
 /// </summary>
 public sealed record StartRequest(
     IReadOnlyList<SlotState> Slots,
