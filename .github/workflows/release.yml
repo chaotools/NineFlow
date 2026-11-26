@@ -58,8 +58,9 @@ jobs:
           Get-ChildItem "NineFlow-$tag.exe", 'NineFlow-UserGuide-zh.md', 'NineFlow-Preview.png' | Select-Object Name, Length
 
       - name: 创建 GitHub Release
+        # GITHUB_TOKEN 创建的 Release 不会再次触发工作流，使用 PAT 触发 winget。
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
         shell: pwsh
         run: |
           $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.tag }}') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }

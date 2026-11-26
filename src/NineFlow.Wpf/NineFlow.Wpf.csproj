@@ -29,9 +29,9 @@
     <Product>九序</Product>
     <Description>九序 · 多键连发 · 智能续点 · 转发助手</Description>
     <Company>NineFlow</Company>
-    <Version>1.1.7</Version>
-    <FileVersion>1.1.7.0</FileVersion>
-    <AssemblyVersion>1.1.7.0</AssemblyVersion>
+    <Version>1.1.8</Version>
+    <FileVersion>1.1.8.0</FileVersion>
+    <AssemblyVersion>1.1.8.0</AssemblyVersion>
     <NeutralLanguage>zh-CN</NeutralLanguage>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
