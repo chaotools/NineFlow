@@ -6,7 +6,7 @@ namespace NineFlow.Wpf;
 
 /// <summary>
 /// 入口：单实例（命名互斥量 + 命名事件）、全局异常兜底、把临时目录指到 exe 旁边。
-/// 与 WinForms 版的 Program.cs 一一对应，只是宿主从 Application.Run(Form) 换成 WPF 的窗口。
+/// 入口只做一次性初始化，真正的界面与业务编排在 MainWindow。
 /// </summary>
 public partial class App : System.Windows.Application
 {

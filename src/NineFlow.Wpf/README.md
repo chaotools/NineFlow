@@ -1,7 +1,7 @@
 # NineFlow.Wpf — WPF 界面层（方案 2）
 
 只替换界面层：`NineFlow.Core`（引擎、热键、录键、INI、校验、更新）**一行未改**，
-500 项逻辑测试（完整 532 项）照旧通过。原 `src/NineFlow`（WinForms）保留对照，默认构建不再使用。
+500 项逻辑测试（完整 532 项）照旧通过。旧 WinForms 工程已移除，仓库只保留 WPF 一个界面方向。
 
 ## 为什么是 WPF
 
@@ -37,7 +37,7 @@ dotnet publish src/NineFlow.Wpf/NineFlow.Wpf.csproj -c Release -o publish
 
 产物：`publish/NineFlow.exe`（约 66.5 MB，双击即可运行）。
 
-## 与 WinForms 版的差异
+## 界面设计
 
 - 布局：一张无卡片、无边框的白面，只用发丝线分隔；行高 54，开关 / 按键 / 间隔 / 次数 / 本轮五列。
   窗口宽度 880，高度随行数生长（320–820），超过 820 行区滚动，列头随滚动条自动让位。
@@ -48,12 +48,11 @@ dotnet publish src/NineFlow.Wpf/NineFlow.Wpf.csproj -c Release -o publish
 - 快捷键与续点压成页脚一行键帽（F7 启动 / F8 停止 / F9 重置 / Down 跳过）+「设置 ▾」。
 - 设置菜单改为扁平菜单（`提示音` / `关闭窗口时隐藏到托盘` / `窗口置顶` / `启动时检查更新`），
   顶栏齿轮与页脚按钮共用同一份菜单，均从按钮下方弹出。
-- 单实例命名与 WinForms 版一致（`Local\NineFlow.SingleInstance.v1`），旧版在运行时新版会直接唤回已有窗口，
-  不会同时发送按键。
+- 单实例使用 `Local\NineFlow.SingleInstance.v1`；重复启动会唤回已有窗口，不会同时发送按键。
 - `app.manifest` 声明 `requireAdministrator` 与 PerMonitorV2：双击弹 UAC，高 DPI 下不糊。
 
 ## 接入状态
 
 1. `build.ps1`、GitHub Actions（build / release / CodeQL）已切到本工程，产物仍为 `NineFlow.exe`。
 2. 根 `README.md`、`使用说明.md` 与截图已按 WPF 界面更新。
-3. `tools/e2e-v2.ps1` 仍按旧 WinForms 界面编写，需要单独更新后再跑；核心与逻辑测试不受影响。
+3. `tools/e2e-v2.ps1` 需要按 WPF 界面重写后再跑；核心与逻辑测试不受影响。

@@ -17,8 +17,7 @@ using MenuItem = System.Windows.Controls.MenuItem;
 namespace NineFlow.Wpf;
 
 /// <summary>
-/// WPF 版主窗口。行为与 WinForms 版一致：同样的 Core 调用顺序、同样的状态文案，
-/// 只是把「手算坐标 + 自绘控件」换成「Grid 行列 + 数据绑定」。
+/// 主窗口：Grid 行列 + 数据绑定，业务判断全部下沉到 NineFlow.Core。
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -162,7 +161,7 @@ public partial class MainWindow : Window
         base.OnClosing(e);
         if (e.Cancel) return;
 
-        // 关闭按钮 = 收进托盘：与 WinForms 版一致，只有托盘菜单的「退出」才真正结束
+        // 关闭按钮 = 收进托盘：只有托盘菜单的「退出」才真正结束
         if (!_exiting && _settings.CloseToTray)
         {
             e.Cancel = true;

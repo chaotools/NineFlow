@@ -7,7 +7,7 @@ using NineFlow.Core;
 namespace NineFlow.Wpf;
 
 /// <summary>
-/// 检查更新与静默安装（WPF 版）。流程与 WinForms 版一致：
+/// 检查更新与静默安装：
 /// 检查 GitHub Release → 有新版确认 → 下载校验 → 启动替换脚本 → 退出由脚本重启。
 /// </summary>
 public partial class MainWindow

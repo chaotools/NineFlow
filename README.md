@@ -101,19 +101,13 @@ NineFlow\
 │  │  ├─ UpdateInstaller.cs    退出后替换 exe 并重启的脚本
 │  │  ├─ UiText.cs             界面文案
 │  │  └─ TimePeriod.cs         timeBeginPeriod(1)
-│  ├─ NineFlow.Wpf\            WPF 界面（默认，极简单面板）
-│  │  ├─ App.xaml(.cs)         单实例、临时目录重定向、全局异常兜底
-│  │  ├─ MainWindow.xaml(.cs)  主窗口、托盘、热键、状态机
-│  │  ├─ Theme.xaml            配色与全部控件模板
-│  │  ├─ SlotRowVm.cs          行数据模型
-│  │  ├─ Updates.cs            检查更新 / 确认 / 静默安装流程
-│  │  └─ DesktopShortcut.cs    首次运行创建桌面快捷方式
-│  └─ NineFlow\                WinForms 旧界面（保留对照，默认构建不再使用）
-│     ├─ Program.cs            入口、单实例唤起、全局异常兜底
-│     ├─ MainForm.cs           主窗口、托盘、热键、状态机
+│  └─ NineFlow.Wpf\            WPF 界面（极简单面板）
+│     ├─ App.xaml(.cs)         单实例、临时目录重定向、全局异常兜底
+│     ├─ MainWindow.xaml(.cs)  主窗口、托盘、热键、状态机
+│     ├─ Theme.xaml            配色与全部控件模板
+│     ├─ SlotRowVm.cs          行数据模型
 │     ├─ Updates.cs            检查更新 / 确认 / 静默安装流程
-│     ├─ Controls.cs           自绘控件
-│     └─ Theme.cs              配色、字体、圆角
+│     └─ DesktopShortcut.cs    首次运行创建桌面快捷方式
 ├─ tests\
 │  ├─ NineFlow.Tests\          500 项逻辑测试（控制台运行，无第三方框架）
 │  └─ KeyCatcher\              测试辅助：全局键盘钩子记录按键
@@ -125,7 +119,7 @@ NineFlow\
 
 ## 5. 设计要点
 
-**分层**：`NineFlow.Core` 不引用 WPF / WinForms，只含 P/Invoke 与纯逻辑，
+**分层**：`NineFlow.Core` 不引用任何 UI 框架，只含 P/Invoke 与纯逻辑，
 因此可以在控制台里直接测试真实的全局热键注册与真实 SendInput 按键投递。
 界面层只负责读写控件、调用引擎、合并刷新状态。
 

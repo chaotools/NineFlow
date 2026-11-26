@@ -6,9 +6,9 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build",
-      "program": "${workspaceFolder}/src/NineFlow/bin/Debug/net10.0-windows/win-x64/NineFlow.dll",
+      "program": "${workspaceFolder}/src/NineFlow.Wpf/bin/Debug/net10.0-windows/win-x64/NineFlow.dll",
       "args": [],
-      "cwd": "${workspaceFolder}/src/NineFlow/bin/Debug/net10.0-windows/win-x64",
+      "cwd": "${workspaceFolder}/src/NineFlow.Wpf/bin/Debug/net10.0-windows/win-x64",
       "console": "internal",
       "stopAtEntry": false,
       "env": {
