@@ -66,9 +66,6 @@ publish\NineFlow.exe      # 产物
 
 参数：`-SkipTests` 跳过测试；`-NoPublish` 只编译测试。
 
-在 VS Code 打开本目录即可（`.vscode\tasks.json` 提供 build / run / test / publish 任务，
-`Ctrl+Shift+B` 直接编译）。
-
 ---
 
 ## 4. 项目结构

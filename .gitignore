@@ -11,11 +11,10 @@ artifacts/
 .runtime-temp/
 .temp/
 
-# Visual Studio / Rider / VS Code 本地设置
+# Visual Studio / Rider 本地设置
 .vs/
 *.user
 *.suo
-.vscode/settings.json
 
 # 运行时配置（含个人累计进度，不入库）
 NineFlow.ini
