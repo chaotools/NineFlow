@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [1.1.8] - 2026-11-26
+
 ### 新增
 
 - 新增 WPF 界面层 `src/NineFlow.Wpf` 并移除旧 WinForms 工程，仓库只保留 WPF 一个界面方向
@@ -16,7 +18,7 @@
   用于排查「按键没发出去」「热键没反应」这类问题。日志写在 exe 旁 `logs\` 目录（只读时自动退回
   `%LOCALAPPDATA%\NineFlow\logs`），单文件 1 MB 自动轮转，只保留两份，只写本机不上传；
   「设置 ▾ → 打开日志文件夹」一键定位。新增 33 项逻辑测试（CI 逻辑测试共 500 项，CI 可跑）
-- 新增 winget 分发支持：`packaging/winget/` 提供 v1.1.7 的提交清单（portable 安装类型，`winget validate` 通过）；
+- 新增 winget 分发支持：`packaging/winget/` 提供 v1.1.8 的首个提交清单（portable 安装类型，`winget validate` 通过）；
   `.github/workflows/winget.yml` 在每次发布正式 Release 后自动向 `microsoft/winget-pkgs` 提交新版本 PR
   （需先完成首次手动提交，并在仓库 Secret 中配置 `WINGET_TOKEN`）
 - 首次运行时静默在桌面创建快捷方式（指向 exe，工作目录为 exe 所在文件夹）；成功才写入标记，失败会在下次启动重试。状态栏会提示「已在桌面创建快捷方式」。快捷方式记录的是绝对路径，之后挪动文件夹需删掉快捷方式重新启动一次程序来重建
