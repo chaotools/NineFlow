@@ -35,7 +35,7 @@ function Find-Dotnet {
         if ($candidate -and (Test-Path $candidate)) { return $candidate }
     }
 
-    throw "没有找到 dotnet。请安装 .NET 8 SDK：https://dotnet.microsoft.com/download/dotnet/8.0"
+    throw "没有找到 dotnet。请安装 .NET 10 SDK：https://dotnet.microsoft.com/download/dotnet/10.0"
 }
 
 $dotnet = Find-Dotnet
@@ -59,7 +59,7 @@ if (-not $SkipTests) {
     & $dotnet build $testProject -c $Configuration
     if ($LASTEXITCODE -ne 0) { throw "测试项目编译失败" }
 
-    $testDll = Join-Path $root "tests\NineFlow.Tests\bin\$Configuration\net8.0-windows\NineFlow.Tests.dll"
+    $testDll = Join-Path $root "tests\NineFlow.Tests\bin\$Configuration\net10.0-windows\NineFlow.Tests.dll"
     & $dotnet $testDll
     if ($LASTEXITCODE -ne 0) { throw "测试未通过" }
 }

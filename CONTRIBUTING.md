@@ -3,7 +3,7 @@
 ## 环境要求
 
 - Windows 10 / 11 x64
-- .NET 8 SDK
+- .NET 10 SDK
 
 ## 构建与测试
 
@@ -15,8 +15,8 @@
 
 ```powershell
 dotnet build tests\NineFlow.Tests\NineFlow.Tests.csproj -c Release
-dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll                     # 完整 499 项（467 逻辑 + 32 集成）
-dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll --skip-integration   # 跳过需真实桌面的 32 项
+dotnet tests\NineFlow.Tests\bin\Release\net10.0-windows\NineFlow.Tests.dll                     # 完整 499 项（467 逻辑 + 32 集成）
+dotnet tests\NineFlow.Tests\bin\Release\net10.0-windows\NineFlow.Tests.dll --skip-integration   # 跳过需真实桌面的 32 项
 ```
 
 ## 约定

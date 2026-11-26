@@ -213,6 +213,10 @@ internal static class ClickEngineTests
             var completion = new TaskCompletionSource<EngineStopResult>(TaskCreationOptions.RunContinuationsAsynchronously);
             engine.Stopped += result => completion.TrySetResult(result);
 
+            // 引擎在第一次进度回调处停住，避免后台线程抢在 IsRunning 断言之前先跑完
+            var gate = new ManualResetEventSlim(false);
+            engine.ProgressChanged += () => gate.Wait();
+
             var slots = new List<SlotState>
             {
                 new() { Index = 1, Enabled = true, Key = "Down", Interval = 0.01, MaxCount = 2 },
@@ -221,6 +225,7 @@ internal static class ClickEngineTests
 
             Program.Check("引擎可以启动", engine.Start(slots, "Down", 3, out string startError), startError);
             Program.Check("启动后处于运行状态", engine.IsRunning);
+            gate.Set();
             Program.Check("等待本轮完成", completion.Task.Wait(5000), "超时未完成");
 
             EngineStopResult result = completion.Task.Result;

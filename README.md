@@ -13,7 +13,7 @@ Windows 桌面「多键连发 · 智能续点」工具，免安装、双击即�
 - 中文名：**九序**
 - 英文名：**NineFlow**
 
-技术栈：C# / .NET 8 / WinForms。目标是让「重复按键 + 跨轮续点」这类工作一步完成，
+技术栈：C# / .NET 10 / WinForms。目标是让「重复按键 + 跨轮续点」这类工作一步完成，
 同时把键盘发到正确的窗口，并把状态、进度说清楚。
 
 ---
@@ -57,7 +57,7 @@ Windows 桌面「多键连发 · 智能续点」工具，免安装、双击即�
 
 ## 3. 从源码构建
 
-需要 **.NET 8 SDK**。
+需要 **.NET 10 SDK**。
 
 ```powershell
 .\build.ps1               # 还原 + 编译 + 全部单元测试 + 发布单文件 exe
@@ -155,7 +155,7 @@ NineFlow\
 
 ```powershell
 dotnet build tests\NineFlow.Tests\NineFlow.Tests.csproj -c Release
-dotnet tests\NineFlow.Tests\bin\Release\net8.0-windows\NineFlow.Tests.dll
+dotnet tests\NineFlow.Tests\bin\Release\net10.0-windows\NineFlow.Tests.dll
 ```
 
 - **532 项**单元 / 集成测试：INI 解析与往返、配置与界面选项、按键名映射、

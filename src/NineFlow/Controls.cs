@@ -1,4 +1,5 @@
 using NineFlow.Core;
+using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -22,6 +23,7 @@ internal sealed class CardPanel : Panel
         DoubleBuffered = true;
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public int CornerRadius { get; set; }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -75,8 +77,10 @@ internal sealed class AppButton : Button
         DoubleBuffered = true;
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public AppButtonKind Kind { get; set; } = AppButtonKind.Secondary;
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public int CornerRadius { get; set; } = 10;
 
     protected override void OnPaintBackground(PaintEventArgs pevent)
@@ -192,6 +196,7 @@ internal sealed class AppSwitch : CheckBox
         DoubleBuffered = true;
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Color SurfaceColor { get; set; } = Theme.Card;
 
     protected override void OnPaintBackground(PaintEventArgs pevent)
@@ -307,6 +312,7 @@ internal class AppTextField : Panel
         Height = 32;
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Color SurfaceColor
     {
         get => BackColor;
@@ -320,31 +326,37 @@ internal class AppTextField : Panel
 
     public TextBox Editor => _editor;
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public HorizontalAlignment TextAlign
     {
         get => _editor.TextAlign;
         set => _editor.TextAlign = value;
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string Value
     {
         get => _editor.Text;
         set => _editor.Text = value ?? string.Empty;
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string Placeholder
     {
         get => _editor.PlaceholderText;
         set => _editor.PlaceholderText = value;
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public int Radius { get; set; } = 8;
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public int RightInset { get; set; } = 10;
 
     private bool _capturing;
 
     /// <summary>正在等待用户按键：边框转红，提示这格现在是"录入中"。</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool Capturing
     {
         get => _capturing;
@@ -359,6 +371,7 @@ internal class AppTextField : Panel
     private Color _valueColor = Theme.TextPrimary;
 
     /// <summary>文字颜色（未启用状态下会自动变浅）。</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Color ValueColor
     {
         get => _valueColor;
