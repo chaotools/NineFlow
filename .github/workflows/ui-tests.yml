@@ -1,0 +1,57 @@
+name: ui-tests
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  wpf-e2e:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 发布单文件 exe
+        run: dotnet publish src/NineFlow.Wpf/NineFlow.Wpf.csproj -c Release -o publish
+
+      - name: 编译按键捕获工具
+        run: dotnet build tests/KeyCatcher/KeyCatcher.csproj -c Release
+
+      - name: 准备交付冒烟目录
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/delivery | Out-Null
+          Copy-Item publish/NineFlow.exe artifacts/delivery/NineFlow.exe
+          Copy-Item publish/NineFlow.exe artifacts/delivery/九序.exe
+          Copy-Item 使用说明.md artifacts/delivery/使用说明.md
+
+      - name: 发布产物冒烟测试
+        shell: pwsh
+        run: ./tools/verify-delivery.ps1 -DeliverDir "${{ github.workspace }}\artifacts\delivery" -ExeName "九序.exe"
+
+      - name: WPF UI 端到端测试
+        shell: pwsh
+        run: >-
+          ./tools/e2e-v2.ps1
+          -ExePath "${{ github.workspace }}\publish\NineFlow.exe"
+          -KeyCatcherExe "${{ github.workspace }}\tests\KeyCatcher\bin\Release\net10.0-windows\KeyCatcher.exe"
+          -WorkDir "${{ github.workspace }}\artifacts\e2e-v2"
+
+      - name: 上传测试日志
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: NineFlow-ui-test-logs
+          path: |
+            artifacts/e2e-v2/*.log
+            artifacts/delivery/*.log
+          if-no-files-found: ignore

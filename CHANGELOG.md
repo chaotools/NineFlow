@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### 新增
+
+- WPF 主窗口、动态按键行和设置菜单补充稳定的自动化标识与可读摘要，便于 UI 自动化和无障碍工具识别
+- 新增 `.github/workflows/ui-tests.yml`：PR / `main` 自动运行 20 项交付冒烟和 75 项 WPF UI 端到端测试，Release 发布前也必须通过
+
+### 修复
+
+- 重写 `tools/e2e-v2.ps1` 以匹配 WPF 界面，覆盖真实按键、托盘热键、单实例、置顶、重置进度和动态行增删；测试进程直接启动本地构建产物，不再重复触发 SmartScreen 提示
+- 修正 `tools/verify-delivery.ps1` 的 WPF 窗口标题和项目路径识别
+
 ## [1.1.8] - 2026-11-26
 
 ### 新增

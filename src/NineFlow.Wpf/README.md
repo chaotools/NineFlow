@@ -53,6 +53,6 @@ dotnet publish src/NineFlow.Wpf/NineFlow.Wpf.csproj -c Release -o publish
 
 ## 接入状态
 
-1. `build.ps1`、GitHub Actions（build / release / CodeQL）已切到本工程，产物仍为 `NineFlow.exe`。
+1. `build.ps1`、GitHub Actions（build / ui-tests / release / CodeQL）已切到本工程，产物仍为 `NineFlow.exe`。
 2. 根 `README.md`、`使用说明.md` 与截图已按 WPF 界面更新。
-3. `tools/e2e-v2.ps1` 需要按 WPF 界面重写后再跑；核心与逻辑测试不受影响。
+3. `tools/e2e-v2.ps1` 已按 WPF 自动化树重写，当前 75 项全部通过；CI 在 PR / `main` 上自动运行，Release 发布前也会强制执行。

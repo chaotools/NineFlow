@@ -14,7 +14,11 @@ permissions:
   contents: write
 
 jobs:
+  ui-tests:
+    uses: ./.github/workflows/ui-tests.yml
+
   release:
+    needs: ui-tests
     runs-on: windows-latest
     steps:
       - name: 检出代码

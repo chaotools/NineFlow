@@ -1084,6 +1084,7 @@ public partial class MainWindow : Window
             string none = UiText.T("summary.none");
             if (warnings.Count > 0) none += " · " + UiText.T("summary.warnEmptyKey", string.Join(",", warnings));
             TxtSummary.Text = none;
+            System.Windows.Automation.AutomationProperties.SetHelpText(BtnStart, none);
             return;
         }
 
@@ -1107,6 +1108,7 @@ public partial class MainWindow : Window
 
         text += " · " + targetText;
         TxtSummary.Text = text;
+        System.Windows.Automation.AutomationProperties.SetHelpText(BtnStart, text);
     }
 
     private void RestoreTargetFocus()

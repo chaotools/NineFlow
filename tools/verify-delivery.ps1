@@ -5,6 +5,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [Console]::OutputEncoding
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = New-Object Security.Principal.WindowsPrincipal($identity)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "交付冒烟测试必须与 requireAdministrator 的应用同权限运行；请使用管理员 PowerShell。"
+}
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, WindowsBase
 
 $pass = 0
@@ -27,7 +34,7 @@ function Find-MainWindow([int]$timeoutSeconds = 15) {
         $root = [System.Windows.Automation.AutomationElement]::RootElement
         $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
         foreach ($w in $windows) {
-            if ($w.Current.Name -ne "九序") { continue }
+            if ($w.Current.Name -notlike "九序 · *") { continue }
             $cond = New-Object System.Windows.Automation.PropertyCondition(
                 [System.Windows.Automation.AutomationElement]::AutomationIdProperty, "status.state")
             if ($w.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)) { return $w }
@@ -40,6 +47,16 @@ function Find-MainWindow([int]$timeoutSeconds = 15) {
 $exe = Join-Path $DeliverDir $ExeName
 $ini = Join-Path $DeliverDir "NineFlow.ini"
 
+function Start-NineFlow([string]$WorkingDirectory = $DeliverDir) {
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $exe
+    $startInfo.WorkingDirectory = $WorkingDirectory
+    $startInfo.UseShellExecute = $false
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    if (-not $process) { throw "无法启动 $exe" }
+    return $process
+}
+
 Write-Output "== 前置：清空进程与配置 =="
 Stop-AllNineFlow
 Remove-Item $ini -ErrorAction SilentlyContinue
@@ -50,17 +67,17 @@ Check "启动前没有配置文件" (-not (Test-Path $ini))
 
 Write-Output ""
 Write-Output "== A. 从交付目录启动 =="
-$proc = Start-Process -FilePath $exe -PassThru
+$proc = Start-NineFlow
 $window = Find-MainWindow
 Check "A 主窗口出现" ($window -ne $null)
-Check "A 窗口标题是九序" ($window.Current.Name -eq "九序")
+Check "A 窗口标题含中文名与状态" ($window.Current.Name -like "九序 · *")
 Start-Sleep -Milliseconds 800
 Check "A 首次运行自动生成 NineFlow.ini" (Test-Path $ini)
 Check "A 进程仍在运行" (-not $proc.HasExited)
 
 Write-Output ""
 Write-Output "== B. 单实例：再次双击唤出窗口 =="
-$second = Start-Process -FilePath $exe -PassThru
+$second = Start-NineFlow
 Start-Sleep -Milliseconds 2500
 $second.Refresh()
 Check "B 第二个进程自动退出" ($second.HasExited)
@@ -70,7 +87,7 @@ Write-Output ""
 Write-Output "== C. 换工作目录启动，配置仍生成在 exe 同目录 =="
 Stop-AllNineFlow
 Remove-Item $ini -ErrorAction SilentlyContinue
-$proc = Start-Process -FilePath $exe -WorkingDirectory "C:\Windows" -PassThru
+$proc = Start-NineFlow -WorkingDirectory "C:\Windows"
 $window = Find-MainWindow
 Check "C 主窗口出现" ($window -ne $null)
 Start-Sleep -Milliseconds 800
@@ -86,7 +103,7 @@ Write-Output "== D. 文件信息 =="
 $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
 Check "D 产品名是九序" ($info.ProductName -eq "九序") "实际: $($info.ProductName)"
 $repoRoot = Split-Path $PSScriptRoot -Parent
-[xml]$projectXml = Get-Content (Join-Path $repoRoot "src\NineFlow\NineFlow.csproj")
+[xml]$projectXml = Get-Content (Join-Path $repoRoot "src\NineFlow.Wpf\NineFlow.Wpf.csproj")
 $expectedVersion = (@($projectXml.Project.PropertyGroup.Version | Where-Object { $_ }) | Select-Object -First 1)
 Check "D 版本号为 $expectedVersion" ($info.FileVersion -like "$expectedVersion.*") "实际: $($info.FileVersion)"
 
