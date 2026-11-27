@@ -8,7 +8,7 @@
 ### 新增
 
 - WPF 主窗口、动态按键行和设置菜单补充稳定的自动化标识与可读摘要，便于 UI 自动化和无障碍工具识别
-- 新增 `.github/workflows/ui-tests.yml`：PR / `main` 自动运行 20 项交付冒烟和 75 项 WPF UI 端到端测试，Release 发布前也必须通过
+- 新增 `.github/workflows/ui-tests.yml`：PR / `main` 自动运行 20 项交付冒烟和 76 项 WPF UI 端到端测试，Release 发布前也必须通过
 
 ### 修复
 

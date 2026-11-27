@@ -304,9 +304,12 @@ function Activate-Target($catcher) {
     $catcher.Process.Refresh()
     if ($catcher.Process.HasExited) { return $false }
     $hwnd = [E2E]::FindMainWindow($catcher.Process.Id)
-    $forced = [E2E]::ForceForeground($hwnd)
-    Start-Sleep -Milliseconds 1200
-    return $forced -and ([E2E]::ForegroundProcessId() -eq $catcher.Process.Id)
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        $forced = [E2E]::ForceForeground($hwnd)
+        Start-Sleep -Milliseconds 600
+        if ($forced -and ([E2E]::ForegroundProcessId() -eq $catcher.Process.Id)) { return $true }
+    }
+    return $false
 }
 
 if (-not (Test-Path $WorkDir)) { New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null }
@@ -467,13 +470,20 @@ try {
 
     if ($window) {
         [E2E]::Tap(0x76)
-        $status = Wait-Status $window "运行中"
-        Check "F7 开始运行" ($status -like "*运行中*") "实际: $status"
+        Start-Sleep -Milliseconds 300
+        [E2E]::Tap(0x76)
         Start-Sleep -Milliseconds 800
         [E2E]::Tap(0x77)
-        $status = Wait-Status $window "已停止"
-        Check "F8 停止运行" ($status -like "*已停止*") "实际: $status"
-        Check "停止后进度已保存" ([int](Read-IniValue $iniPath "Slot1" "Done") -gt 0)
+        $saved = Wait-Until { [int](Read-IniValue $iniPath "Slot1" "Done") -gt 0 } 6
+        $captured = if (Test-Path $catcher.LogPath) { Get-Content $catcher.LogPath -Raw } else { "" }
+        $sentCount = ([regex]::Matches($captured, "vk=135;")).Count
+        Check "F7 开始运行" ($sentCount -gt 0) "实际发送 F24 $sentCount 次"
+        Check "F8 停止运行" ($saved -and $sentCount -gt 0) "实际进度: $(Read-IniValue $iniPath 'Slot1' 'Done')"
+        Start-Sleep -Milliseconds 500
+        $capturedAfter = if (Test-Path $catcher.LogPath) { Get-Content $catcher.LogPath -Raw } else { "" }
+        $afterCount = ([regex]::Matches($capturedAfter, "vk=135;")).Count
+        Check "停止后不再发送" ($afterCount -eq $sentCount) "停止前 $sentCount 次，停止后 $afterCount 次"
+        Check "停止后进度已保存" $saved
     }
     Stop-All
 

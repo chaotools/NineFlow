@@ -160,7 +160,7 @@ dotnet tests\NineFlow.Tests\bin\Release\net10.0-windows\NineFlow.Tests.dll
   界面行解析、真实 `RegisterHotKey` + `WM_HOTKEY`、
   真实 `SendInput` 投递、0.02 秒发送频率；更新检查的 Release 解析、版本比较、
   下载地址校验与替换脚本。
-- **75 项**对发布版 exe 的端到端测试（`tools\e2e-v2.ps1`，UI 自动化驱动真实窗口 +
+- **76 项**对发布版 exe 的端到端测试（`tools\e2e-v2.ps1`，UI 自动化驱动真实窗口 +
   全局键盘钩子统计按键）：
   - 名称与自动化元素、摘要文案
   - **只执行勾选的行**（勾选行发 3 次、未勾选行 0 次、除启动热键外无多余按键）
@@ -170,7 +170,7 @@ dotnet tests\NineFlow.Tests\bin\Release\net10.0-windows\NineFlow.Tests.dll
   - 关闭到托盘关闭时正常退出并保存进度
   - 动态添加 / 删除按键行
 - **`tools\verify-delivery.ps1`**：20 项交付目录自检（启动、自建 ini、工作目录无关性、单实例、版本号）。
-- **CI**：PR 和推送到 `main` 时，GitHub Actions 先运行交付冒烟与 75 项 WPF UI e2e，
+- **CI**：PR 和推送到 `main` 时，GitHub Actions 先运行交付冒烟与 76 项 WPF UI e2e，
   再编译并运行 500 项逻辑测试（跳过需要真实桌面的 32 项集成测试）；Release 也必须先通过 UI 测试。
   本机运行 UI 测试时请使用管理员 PowerShell，避免提权窗口无法被 UI 自动化读取。
 
