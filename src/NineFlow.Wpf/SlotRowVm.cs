@@ -22,6 +22,13 @@ public sealed class SlotRowVm : INotifyPropertyChanged
     /// <summary>1 基行号，会随增删行重排。</summary>
     public int Index { get; set; }
 
+    public string EnabledAutomationId => $"slot{Index}.enabled";
+    public string KeyAutomationId => $"slot{Index}.key";
+    public string IntervalAutomationId => $"slot{Index}.interval";
+    public string CountAutomationId => $"slot{Index}.count";
+    public string ProgressAutomationId => $"slot{Index}.progress";
+    public string DeleteAutomationId => $"slot{Index}.delete";
+
     public bool Enabled
     {
         get => _enabled;

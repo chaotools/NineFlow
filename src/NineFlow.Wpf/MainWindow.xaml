@@ -41,7 +41,8 @@
                            Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" />
             </StackPanel>
 
-            <Button x:Name="BtnStart" AutomationProperties.AutomationId="button.start" Grid.Column="1" Content="开始连点"
+            <Button x:Name="BtnStart" AutomationProperties.AutomationId="button.start"
+                    Grid.Column="1" Content="开始连点"
                     Style="{StaticResource PrimaryButton}" Width="92" Height="30"
                     FontSize="12" Margin="18,0,8,0"
                     ToolTip="{Binding Text, ElementName=TxtSummary}" />
@@ -108,11 +109,14 @@
                                 </Grid.ColumnDefinitions>
 
                                 <ToggleButton Grid.Column="0" Style="{StaticResource SwitchSmall}"
+                                              AutomationProperties.AutomationId="{Binding EnabledAutomationId}"
+                                              AutomationProperties.Name="{Binding Index, StringFormat=第 {0} 行开关}"
                                               IsChecked="{Binding Enabled, Mode=TwoWay}"
                                               IsEnabled="{Binding Editable}" VerticalAlignment="Center" />
 
                                 <Border x:Name="KeyBorder" Grid.Column="1" Height="34" CornerRadius="7"
                                         Margin="8,0,12,0" VerticalAlignment="Center" Cursor="Hand"
+                                        AutomationProperties.AutomationId="{Binding KeyAutomationId}"
                                         IsEnabled="{Binding Editable}" MouseLeftButtonDown="KeyBorder_MouseDown">
                                     <Border.Style>
                                         <Style TargetType="Border">
@@ -131,20 +135,26 @@
                                 </Border>
 
                                 <TextBox x:Name="IntervalBox" Grid.Column="2" Margin="0,0,12,0"
+                                         AutomationProperties.AutomationId="{Binding IntervalAutomationId}"
                                          Style="{StaticResource CompactField}"
                                          Text="{Binding IntervalText, UpdateSourceTrigger=PropertyChanged}"
                                          IsEnabled="{Binding Editable}" />
 
                                 <TextBox x:Name="CountBox" Grid.Column="3" Margin="0,0,12,0"
+                                         AutomationProperties.AutomationId="{Binding CountAutomationId}"
                                          Style="{StaticResource PlainField}"
                                          Text="{Binding CountText, UpdateSourceTrigger=PropertyChanged}"
                                          IsEnabled="{Binding Editable}" />
 
-                                <TextBlock x:Name="ProgressLabel" Grid.Column="4" Text="{Binding ProgressText}"
+                                <TextBlock x:Name="ProgressLabel" Grid.Column="4"
+                                           AutomationProperties.AutomationId="{Binding ProgressAutomationId}"
+                                           Text="{Binding ProgressText}"
                                            FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Right"
                                            Margin="0,0,4,0" Foreground="{StaticResource TextFaintBrush}" />
 
                                 <Button Grid.Column="5" Content="✕" Style="{StaticResource RowDeleteButton}"
+                                        AutomationProperties.AutomationId="{Binding DeleteAutomationId}"
+                                        AutomationProperties.Name="{Binding Index, StringFormat=删除第 {0} 行}"
                                         VerticalAlignment="Center" HorizontalAlignment="Right"
                                         IsEnabled="{Binding CanRemove}" Click="RemoveRow_Click" />
                             </Grid>
@@ -233,17 +243,17 @@
                         FontSize="10.5" VerticalAlignment="Center" Click="BtnMenu_Click">
                     <Button.ContextMenu>
                         <ContextMenu x:Name="ActionMenu" FontFamily="Microsoft YaHei UI" FontSize="12">
-                            <MenuItem x:Name="MiSave" Header="保存配置" Click="SaveConfig_Click" />
-                            <MenuItem x:Name="MiLoad" Header="读取配置" Click="LoadConfig_Click" />
-                            <MenuItem x:Name="MiUpdate" Header="检查更新" Click="CheckUpdate_Click" />
+                            <MenuItem x:Name="MiSave" AutomationProperties.AutomationId="menu.save" Header="保存配置" Click="SaveConfig_Click" />
+                            <MenuItem x:Name="MiLoad" AutomationProperties.AutomationId="menu.load" Header="读取配置" Click="LoadConfig_Click" />
+                            <MenuItem x:Name="MiUpdate" AutomationProperties.AutomationId="menu.update" Header="检查更新" Click="CheckUpdate_Click" />
                             <Separator />
-                            <MenuItem x:Name="MiBeep" Header="提示音" IsCheckable="True" Click="Option_Click" />
-                            <MenuItem x:Name="MiCloseToTray" Header="关闭窗口时隐藏到托盘" IsCheckable="True" Click="Option_Click" />
-                            <MenuItem x:Name="MiTopMost" Header="窗口置顶" IsCheckable="True" Click="Option_Click" />
-                            <MenuItem x:Name="MiAutoUpdate" Header="启动时检查更新" IsCheckable="True" Click="Option_Click" />
-                            <MenuItem x:Name="MiDiagnostics" Header="诊断日志" IsCheckable="True" Click="Option_Click" />
+                            <MenuItem x:Name="MiBeep" AutomationProperties.AutomationId="menu.beep" Header="提示音" IsCheckable="True" Click="Option_Click" />
+                            <MenuItem x:Name="MiCloseToTray" AutomationProperties.AutomationId="menu.closeToTray" Header="关闭窗口时隐藏到托盘" IsCheckable="True" Click="Option_Click" />
+                            <MenuItem x:Name="MiTopMost" AutomationProperties.AutomationId="menu.topMost" Header="窗口置顶" IsCheckable="True" Click="Option_Click" />
+                            <MenuItem x:Name="MiAutoUpdate" AutomationProperties.AutomationId="menu.autoUpdate" Header="启动时检查更新" IsCheckable="True" Click="Option_Click" />
+                            <MenuItem x:Name="MiDiagnostics" AutomationProperties.AutomationId="menu.diagnostics" Header="诊断日志" IsCheckable="True" Click="Option_Click" />
                             <Separator />
-                            <MenuItem x:Name="MenuOpenLog" Header="打开日志文件夹" Click="OpenLogFolder_Click" />
+                            <MenuItem x:Name="MenuOpenLog" AutomationProperties.AutomationId="menu.openLog" Header="打开日志文件夹" Click="OpenLogFolder_Click" />
                         </ContextMenu>
                     </Button.ContextMenu>
                 </Button>

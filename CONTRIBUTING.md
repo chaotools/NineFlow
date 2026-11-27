@@ -15,9 +15,19 @@
 
 ```powershell
 dotnet build tests\NineFlow.Tests\NineFlow.Tests.csproj -c Release
-dotnet tests\NineFlow.Tests\bin\Release\net10.0-windows\NineFlow.Tests.dll                     # 完整 499 项（467 逻辑 + 32 集成）
+dotnet tests\NineFlow.Tests\bin\Release\net10.0-windows\NineFlow.Tests.dll                     # 完整 532 项（500 逻辑 + 32 集成）
 dotnet tests\NineFlow.Tests\bin\Release\net10.0-windows\NineFlow.Tests.dll --skip-integration   # 跳过需真实桌面的 32 项
 ```
+
+发布版 UI 测试（需要管理员 PowerShell）：
+
+```powershell
+dotnet publish src\NineFlow.Wpf\NineFlow.Wpf.csproj -c Release -o publish
+dotnet build tests\KeyCatcher\KeyCatcher.csproj -c Release
+pwsh -NoProfile -File tools\e2e-v2.ps1
+```
+
+CI 会在 PR / `main` 上自动运行交付冒烟和 WPF UI e2e，Release 也会等待这些测试通过。
 
 ## 约定
 

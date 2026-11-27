@@ -1,11 +1,26 @@
-# 九序 / NineFlow —— 发布版 exe 端到端测试（v2：托盘、勾选过滤、热键、置顶）
 param(
-    [string]$ExePath = "C:\Users\0409\Documents\NineFlow\publish\NineFlow.exe",
-    [string]$KeyCatcherExe = "C:\Users\0409\Documents\NineFlow\tests\KeyCatcher\bin\Release\net10.0-windows\KeyCatcher.exe",
-    [string]$WorkDir = "C:\Users\0409\Documents\NineFlow\artifacts\e2e-v2"
+    [string]$ExePath = "",
+    [string]$KeyCatcherExe = "",
+    [string]$WorkDir = ""
 )
 
 $ErrorActionPreference = "Stop"
+trap {
+    Write-Output "ERROR: $($_.Exception.Message)"
+    Write-Output $_.ScriptStackTrace
+    exit 1
+}
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [Console]::OutputEncoding
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = New-Object Security.Principal.WindowsPrincipal($identity)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "WPF e2e 必须与 requireAdministrator 的应用同权限运行；请使用管理员 PowerShell。"
+}
+$repoRoot = Split-Path -Parent $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($ExePath)) { $ExePath = Join-Path $repoRoot "publish\NineFlow.exe" }
+if ([string]::IsNullOrWhiteSpace($KeyCatcherExe)) { $KeyCatcherExe = Join-Path $repoRoot "tests\KeyCatcher\bin\Release\net10.0-windows\KeyCatcher.exe" }
+if ([string]::IsNullOrWhiteSpace($WorkDir)) { $WorkDir = Join-Path $repoRoot "artifacts\e2e-v2" }
 
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
@@ -14,7 +29,6 @@ Add-Type -AssemblyName System.Windows.Forms
 
 Add-Type @"
 using System;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -31,9 +45,13 @@ public static class E2E
     [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder sb, int max);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
-    delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
+    delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct RECT { public int Left, Top, Right, Bottom; }
 
     public static void Tap(byte vk)
     {
@@ -51,7 +69,6 @@ public static class E2E
         return (int)pid;
     }
 
-    /// 找出某个进程的可见主窗口（标题非空、面积最大）
     public static IntPtr FindMainWindow(int processId)
     {
         IntPtr best = IntPtr.Zero;
@@ -73,12 +90,6 @@ public static class E2E
         return best;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    struct RECT { public int Left, Top, Right, Bottom; }
-
-    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
-
-    /// 强制把窗口切到前台（先 ALT 一下，再用 AttachThreadInput 兜底）
     public static bool ForceForeground(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero) return false;
@@ -118,64 +129,95 @@ function Check([string]$name, [bool]$condition, [string]$detail = "") {
 function Stop-All {
     Get-Process -Name KeyCatcher -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Get-Process -Name NineFlow -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process -Name "九序" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Get-CimInstance Win32_Process |
         Where-Object { $_.Name -eq "dotnet.exe" -and $_.CommandLine -like "*NineFlow.dll*" -and $_.ProcessId -ne $PID } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Milliseconds 800
 }
 
-function Find-ById($window, [string]$automationId) {
+function Find-ById($root, [string]$automationId) {
     $condition = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::AutomationIdProperty, $automationId)
-    return $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
+    return $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
 }
 
-function Get-Text($window, [string]$automationId) {
-    $element = Find-ById $window $automationId
+function Find-GlobalById([string]$automationId) {
+    $condition = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::AutomationIdProperty, $automationId)
+    return [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
+        [System.Windows.Automation.TreeScope]::Subtree, $condition)
+}
+
+function Get-Text($root, [string]$automationId) {
+    $element = Find-ById $root $automationId
     if (-not $element) { return "<missing>" }
     return $element.Current.Name
 }
 
+function Invoke-Element($element) {
+    if (-not $element) { throw "自动化元素不存在" }
+    $pattern = $null
+    if ($element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {
+        $pattern.Invoke()
+        return
+    }
+    if ($element.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$pattern)) {
+        $pattern.Toggle()
+        return
+    }
+    throw "元素不支持 Invoke/Toggle：$($element.Current.AutomationId) $($element.Current.Name)"
+}
+
 function Invoke-Button($window, [string]$automationId) {
-    $element = Find-ById $window $automationId
-    if (-not $element) { throw "找不到按钮 $automationId" }
-    $element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    Invoke-Element (Find-ById $window $automationId)
+}
+
+function Wait-Until([scriptblock]$condition, [int]$timeoutSeconds = 8) {
+    $deadline = (Get-Date).AddSeconds($timeoutSeconds)
+    do {
+        if (& $condition) { return $true }
+        Start-Sleep -Milliseconds 100
+    } while ((Get-Date) -lt $deadline)
+    return $false
+}
+
+function Get-MainWindow([int]$timeoutSeconds = 15) {
+    $ready = Wait-Until {
+        $root = [System.Windows.Automation.AutomationElement]::RootElement
+        $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
+        foreach ($w in $windows) {
+            if ($w.Current.Name -like "九序 · *" -and (Find-ById $w "status.state")) { return $w }
+        }
+        return $null
+    } $timeoutSeconds
+    if (-not $ready) { return $null }
+    $root = [System.Windows.Automation.AutomationElement]::RootElement
+    $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
+    foreach ($w in $windows) {
+        if ($w.Current.Name -like "九序 · *" -and (Find-ById $w "status.state")) { return $w }
+    }
+    return $null
 }
 
 function Open-SettingsMenu($window) {
     Invoke-Button $window "button.more"
-    Start-Sleep -Milliseconds 350
+    $null = Wait-Until { Find-GlobalById "menu.save" } 4
 }
 
-function Open-SwitchMenu($window, [string]$switchId) {
-    Open-SettingsMenu $window
-    Invoke-Button $window ($switchId + ".group")
-    Start-Sleep -Milliseconds 350
-}
-
-function Get-MainWindow([int]$timeoutSeconds = 15) {
-    $deadline = (Get-Date).AddSeconds($timeoutSeconds)
-    while ((Get-Date) -lt $deadline) {
-        $root = [System.Windows.Automation.AutomationElement]::RootElement
-        $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
-        foreach ($w in $windows) {
-            if ($w.Current.Name -ne "九序") { continue }
-            if (Find-ById $w "status.state") { return $w }
-        }
-        Start-Sleep -Milliseconds 200
-    }
-    return $null
+function Close-SettingsMenu {
+    [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+    Start-Sleep -Milliseconds 250
 }
 
 function Wait-Status($window, [string]$needle, [int]$timeoutSeconds = 8) {
     $deadline = (Get-Date).AddSeconds($timeoutSeconds)
     $last = ""
-    while ((Get-Date) -lt $deadline) {
-        if (-not (Find-ById $window "status.state")) { continue }
+    do {
         $last = Get-Text $window "status.state"
         if ($last -like "*$needle*") { return $last }
         Start-Sleep -Milliseconds 100
-    }
+    } while ((Get-Date) -lt $deadline)
     return $last
 }
 
@@ -190,8 +232,18 @@ function Read-IniValue([string]$path, [string]$section, [string]$key) {
     return $null
 }
 
-# rows: 数组，每项 @{ Enabled=1; Key="j"; Interval=0.01; Max=3 }
-function Write-TestIni([string]$path, $rows, [string]$hotkeyOn = "F7", [string]$hotkeyOff = "F8", [string]$skipCount = "", [string]$skipKey = "Down", [int]$closeToTray = 1) {
+function Start-WithHotkey([string]$iniPath, [int]$minimumDone = 1) {
+    [E2E]::Tap(0x76)
+    $started = Wait-Until { [int](Read-IniValue $iniPath "Slot1" "Done") -ge $minimumDone } 3
+    if (-not $started) {
+        Start-Sleep -Milliseconds 300
+        [E2E]::Tap(0x76)
+        $started = Wait-Until { [int](Read-IniValue $iniPath "Slot1" "Done") -ge $minimumDone } 4
+    }
+    return $started
+}
+
+function Write-TestIni([string]$path, $rows, [string]$hotkeyOn = "F7", [string]$hotkeyOff = "F8", [string]$hotkeyReset = "F9", [string]$skipCount = "", [string]$skipKey = "Down", [int]$closeToTray = 1) {
     $lines = @()
     for ($i = 1; $i -le [Math]::Max(2, $rows.Count); $i++) {
         $row = if ($i -le $rows.Count) { $rows[$i - 1] } else { @{ Enabled = 0; Key = ""; Interval = 1.5; Max = 0 } }
@@ -206,6 +258,7 @@ function Write-TestIni([string]$path, $rows, [string]$hotkeyOn = "F7", [string]$
     $lines += "[Hotkey]"
     $lines += "On=$hotkeyOn"
     $lines += "Off=$hotkeyOff"
+    $lines += "Reset=$hotkeyReset"
     $lines += ""
     $lines += "[Skip]"
     $lines += "Key=$skipKey"
@@ -215,11 +268,48 @@ function Write-TestIni([string]$path, $rows, [string]$hotkeyOn = "F7", [string]$
     $lines += "CloseToTray=$closeToTray"
     $lines += "Beep=0"
     $lines += "TopMost=0"
+    $lines += "AutoCheckUpdate=0"
+    $lines += "Diagnostics=0"
     $lines += ""
-    $lines += "[Progress]"
-    $lines += "LastSkip=0"
-    $lines += "SkipKey=$skipKey"
+    $lines += "[App]"
+    $lines += "ShortcutCreated=1"
+    $lines += ""
     [System.IO.File]::WriteAllText($path, ($lines -join "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Start-NineFlow {
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $ExePath
+    $startInfo.WorkingDirectory = $publishDir
+    $startInfo.UseShellExecute = $false
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    if (-not $process) { throw "无法启动 $ExePath" }
+    return $process
+}
+
+function Start-KeyCatcher([string]$logPath) {
+    Remove-Item $logPath -ErrorAction SilentlyContinue
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $KeyCatcherExe
+    $startInfo.Arguments = "`"$logPath`""
+    $startInfo.WorkingDirectory = $WorkDir
+    $startInfo.UseShellExecute = $false
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    if (-not $process) { throw "无法启动 KeyCatcher" }
+    $ready = Wait-Until { (Test-Path $logPath) -and ((Get-Content $logPath -Raw) -like "*READY*") } 10
+    return @{ Process = $process; LogPath = $logPath; Ready = $ready }
+}
+
+function Activate-Target($catcher) {
+    $catcher.Process.Refresh()
+    if ($catcher.Process.HasExited) { return $false }
+    $hwnd = [E2E]::FindMainWindow($catcher.Process.Id)
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        $forced = [E2E]::ForceForeground($hwnd)
+        Start-Sleep -Milliseconds 600
+        if ($forced -and ([E2E]::ForegroundProcessId() -eq $catcher.Process.Id)) { return $true }
+    }
+    return $false
 }
 
 if (-not (Test-Path $WorkDir)) { New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null }
@@ -231,184 +321,241 @@ Stop-All
 Remove-Item $iniPath -ErrorAction SilentlyContinue
 Check "被测 exe 存在" (Test-Path $ExePath)
 Check "按键捕获工具存在" (Test-Path $KeyCatcherExe)
+if (-not (Test-Path $ExePath)) { throw "找不到被测 exe：$ExePath" }
+if (-not (Test-Path $KeyCatcherExe)) { throw "找不到 KeyCatcher：$KeyCatcherExe" }
 
-# ------------------------------------------------------------------ A. 名称与界面
-Write-Output ""
-Write-Output "== A. 窗口名称与自动化元素 =="
-Write-TestIni $iniPath @(@{ Enabled = 1; Key = "Down"; Interval = 0.02; Max = 9 }, @{ Enabled = 1; Key = "Enter"; Interval = 0.02; Max = 9 })
-$proc = Start-Process -FilePath $ExePath -PassThru
-$window = Get-MainWindow
-Check "主窗口出现" ($window -ne $null)
-if ($window) {
-    Check "窗口标题含中文名与状态" ($window.Current.Name -like "九序 · *")
-    Check "存在开始按钮" ((Find-ById $window "button.start") -ne $null)
-    Check "存在停止按钮" ((Find-ById $window "button.stop") -ne $null)
-    Check "存在重置按钮" ((Find-ById $window "button.reset") -ne $null)
-    Open-SettingsMenu $window
-    Check "菜单里有保存按钮" ((Find-ById $window "button.save") -ne $null)
-    $slotSwitches = (1..20 | Where-Object { Find-ById $window "slot$_.enabled" } | Measure-Object).Count
-    Check "至少存在 2 个行开关" ($slotSwitches -ge 2) "实际 $slotSwitches 个"
-    Check "存在添加行按钮" ((Find-ById $window "button.addSlot") -ne $null)
-    foreach ($id in @("switch.beep", "switch.closeToTray", "switch.topMost", "switch.autoUpdate")) {
-        Check "菜单里存在一级项 $id" ((Find-ById $window ($id + ".group")) -ne $null)
+try {
+    Write-Output ""
+    Write-Output "== A. 窗口名称与自动化元素 =="
+    Write-TestIni $iniPath @(@{ Enabled = 1; Key = "Down"; Interval = 0.02; Max = 9 }, @{ Enabled = 1; Key = "Enter"; Interval = 0.02; Max = 9 })
+    $proc = Start-NineFlow
+    $window = Get-MainWindow
+    Check "主窗口出现" ($window -ne $null)
+    if ($window) {
+        Check "窗口标题含中文名与状态" ($window.Current.Name -like "九序 · *")
+        $start = Find-ById $window "button.start"
+        Check "存在开始按钮" ($start -ne $null)
+        Check "开始按钮初始文案正确" ($start.Current.Name -eq "开始连点")
+        Check "存在重置按钮" ((Find-ById $window "button.reset") -ne $null)
+        Check "存在第一行开关" ((Find-ById $window "slot1.enabled") -ne $null)
+        Check "存在第二行开关" ((Find-ById $window "slot2.enabled") -ne $null)
+        Check "存在第一行间隔输入" ((Find-ById $window "slot1.interval") -ne $null)
+        Check "存在第一行次数输入" ((Find-ById $window "slot1.count") -ne $null)
+        Check "存在添加行按钮" ((Find-ById $window "button.addSlot") -ne $null)
+        Check "存在设置按钮" ((Find-ById $window "button.more") -ne $null)
+        $summary = $start.Current.HelpText
+        Check "执行摘要可被自动化读取" ($summary -like "*共 2 行*") "实际: $summary"
+
+        Open-SettingsMenu $window
+        foreach ($id in @("menu.save", "menu.load", "menu.update", "menu.beep", "menu.closeToTray", "menu.topMost", "menu.autoUpdate", "menu.diagnostics", "menu.openLog")) {
+            Check "菜单项 $id 存在" ((Find-GlobalById $id) -ne $null)
+        }
+        Close-SettingsMenu
     }
-    Open-SwitchMenu $window "switch.beep"
-    Check "提示音二级菜单里有开关" ((Find-ById $window "switch.beep") -ne $null)
-    $summary = Get-Text $window "status.summary"
-    Check "本次执行摘要显示 2 行" ($summary -like "*共 2 行*") "实际: $summary"
-}
-Stop-All
+    Stop-All
 
-# ------------------------------------------------------------------ B. 只执行勾选的行
-Write-Output ""
-Write-Output "== B. 只执行勾选的行（真实按键验证）=="
-Write-TestIni $iniPath @(
-    @{ Enabled = 1; Key = "j"; Interval = 0.01; Max = 3 },
-    @{ Enabled = 0; Key = "k"; Interval = 0.01; Max = 3 },
-    @{ Enabled = 1; Key = ""; Interval = 0.01; Max = 3 }
-)
-$proc = Start-Process -FilePath $ExePath -PassThru
-$window = Get-MainWindow
-Check "B 窗口出现" ($window -ne $null)
-
-$logPath = Join-Path $WorkDir "keys.log"
-Remove-Item $logPath -ErrorAction SilentlyContinue
-$catcher = Start-Process -FilePath $KeyCatcherExe -ArgumentList "`"$logPath`"" -PassThru
-Start-Sleep -Seconds 2
-Check "按键捕获窗口就绪" ((Test-Path $logPath) -and ((Get-Content $logPath -Raw) -like "*READY*"))
-
-# 把捕获窗口真正切到前台，并等九序记录下这个目标窗口
-$catcherHwnd = [E2E]::FindMainWindow($catcher.Id)
-$forced = [E2E]::ForceForeground($catcherHwnd)
-Start-Sleep -Milliseconds 1200
-Check "按键捕获窗口在前台" ($forced -and ([E2E]::ForegroundProcessId() -eq $catcher.Id)) "前台进程 $([E2E]::ForegroundProcessId())，捕获进程 $($catcher.Id)"
-# 切前台时按过的 ALT 也会被钩子记录，这里清空日志只保留后续按键
-Set-Content -Path $logPath -Value "READY" -NoNewline -Encoding utf8
-
-if ($window) {
-    $summary = Get-Text $window "status.summary"
+    Write-Output ""
+    Write-Output "== B. 只执行勾选的行（真实按键验证）=="
+    Write-TestIni $iniPath @(
+        @{ Enabled = 1; Key = "j"; Interval = 0.01; Max = 3 },
+        @{ Enabled = 0; Key = "k"; Interval = 0.01; Max = 3 },
+        @{ Enabled = 1; Key = ""; Interval = 0.01; Max = 3 }
+    )
+    $proc = Start-NineFlow
+    $window = Get-MainWindow
+    Check "B 主窗口出现" ($window -ne $null)
+    $hwnd = if ($window) { [IntPtr]$window.Current.NativeWindowHandle } else { [IntPtr]::Zero }
+    $start = if ($window) { Find-ById $window "button.start" } else { $null }
+    $summary = if ($start) { $start.Current.HelpText } else { "" }
     Check "摘要只列出勾选且有按键的行" ($summary -like "*j ×3*" -and $summary -notlike "*k ×3*") "实际: $summary"
     Check "摘要提示有空按键的勾选行" ($summary -like "*第 3 行*") "实际: $summary"
 
-    Invoke-Button $window "button.start"
-    $status = Wait-Status $window "已完成"
-    Check "本轮完成" ($status -like "*已完成*") "实际: $status"
-    Start-Sleep -Milliseconds 600
+    $logPath = Join-Path $WorkDir "keys.log"
+    $catcher = Start-KeyCatcher $logPath
+    Check "按键捕获工具就绪" ($catcher.Ready)
+    $targetReady = Activate-Target $catcher
+    Check "按键捕获窗口成为目标窗口" $targetReady
+    Set-Content -Path $logPath -Value "READY" -NoNewline -Encoding utf8
+    if ($hwnd -ne [IntPtr]::Zero) { $window = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd) }
+    Check "B 后台窗口句柄有效" ($window -ne $null)
 
-    $captured = if (Test-Path $logPath) { Get-Content $logPath -Raw } else { "" }
-    $jCount = ([regex]::Matches($captured, "vk=74;")).Count   # 'j' = 0x4A
-    $kCount = ([regex]::Matches($captured, "vk=75;")).Count   # 'k' = 0x4B
-    Check "勾选行发送了 3 次 j" ($jCount -eq 3) "实际 $jCount 次，内容: [$captured]"
-    Check "未勾选行一次都没发送" ($kCount -eq 0) "实际 $kCount 次"
-    Check "没有多余的按键" (([regex]::Matches($captured, "vk=")).Count -eq 3) "内容: [$captured]"
+    if ($window) {
+        [E2E]::Tap(0x76)
+        $status = Wait-Status $window "已完成"
+        Check "本轮完成" ($status -like "*已完成*") "实际: $status"
+        Start-Sleep -Milliseconds 600
 
-    Check "进度只统计勾选行" ((Read-IniValue $iniPath "Slot1" "Done") -eq "3")
-    Check "未勾选行进度保持 0" ((Read-IniValue $iniPath "Slot2" "Done") -eq "0")
-    Check "空按键行进度保持 0" ((Read-IniValue $iniPath "Slot3" "Done") -eq "0")
+        $captured = if (Test-Path $logPath) { Get-Content $logPath -Raw } else { "" }
+        $jCount = ([regex]::Matches($captured, "vk=74;")).Count
+        $kCount = ([regex]::Matches($captured, "vk=75;")).Count
+        $f7Count = ([regex]::Matches($captured, "vk=118;")).Count
+        Check "勾选行发送了 3 次 j" ($jCount -eq 3) "实际 $jCount 次，内容: [$captured]"
+        Check "未勾选行一次都没发送" ($kCount -eq 0) "实际 $kCount 次"
+        Check "除启动热键外没有多余的按键" ((([regex]::Matches($captured, "vk=")).Count - $f7Count) -eq 3) "内容: [$captured]"
+        Check "进度只统计勾选行" ((Read-IniValue $iniPath "Slot1" "Done") -eq "3")
+        Check "未勾选行进度保持 0" ((Read-IniValue $iniPath "Slot2" "Done") -eq "0")
+        Check "空按键行进度保持 0" ((Read-IniValue $iniPath "Slot3" "Done") -eq "0")
+    }
+    Stop-All
+
+    Write-Output ""
+    Write-Output "== C. 托盘常驻、后台热键与单实例 =="
+    Write-TestIni $iniPath @(@{ Enabled = 1; Key = "F24"; Interval = 0.01; Max = 2 })
+    $proc = Start-NineFlow
+    $window = Get-MainWindow
+    Check "C 主窗口出现" ($window -ne $null)
+    $hwnd = if ($window) { [IntPtr]$window.Current.NativeWindowHandle } else { [IntPtr]::Zero }
+    $catcher = Start-KeyCatcher (Join-Path $WorkDir "target-c.log")
+    Check "C 目标窗口就绪" ($catcher.Ready)
+    Check "C 目标窗口已激活" (Activate-Target $catcher)
+    if ($hwnd -ne [IntPtr]::Zero) { $window = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd) }
+    Check "C 后台窗口句柄有效" ($window -ne $null)
+
+    if ($window) {
+        $window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
+        Start-Sleep -Milliseconds 1200
+        $proc.Refresh()
+        Check "点关闭后进程没有退出" (-not $proc.HasExited)
+        Check "窗口已隐藏到托盘" ((Get-MainWindow -timeoutSeconds 2) -eq $null)
+
+        [E2E]::Tap(0x76)
+        $saved = Wait-Until { (Read-IniValue $iniPath "Slot1" "Done") -eq "2" } 6
+        Check "隐藏到托盘后 F7 仍能连点" $saved "实际: $(Read-IniValue $iniPath 'Slot1' 'Done')"
+
+        $second = Start-NineFlow
+        $restored = Get-MainWindow -timeoutSeconds 8
+        Check "再次启动能唤出已隐藏的窗口" ($restored -ne $null)
+        Start-Sleep -Milliseconds 1200
+        $second.Refresh()
+        Check "第二个实例自动退出" ($second.HasExited)
+        $proc.Refresh()
+        Check "原实例仍在运行" (-not $proc.HasExited)
+    }
+    Stop-All
+
+    Write-Output ""
+    Write-Output "== D. 窗口置顶开关 =="
+    Write-TestIni $iniPath @(@{ Enabled = 1; Key = "F24"; Interval = 0.01; Max = 1 })
+    $proc = Start-NineFlow
+    $window = Get-MainWindow
+    Check "D 主窗口出现" ($window -ne $null)
+
+    if ($window) {
+        $hwnd = [IntPtr]$window.Current.NativeWindowHandle
+        Check "默认不置顶" (-not [E2E]::IsTopMost($hwnd))
+        Open-SettingsMenu $window
+        Invoke-Element (Find-GlobalById "menu.topMost")
+        $topMostOn = Wait-Until { [E2E]::IsTopMost($hwnd) } 4
+        Check "打开置顶后窗口为置顶状态" $topMostOn
+
+        Open-SettingsMenu $window
+        Invoke-Element (Find-GlobalById "menu.topMost")
+        $topMostOff = Wait-Until { -not [E2E]::IsTopMost($hwnd) } 4
+        Check "关闭置顶后恢复普通状态" $topMostOff
+    }
+    Stop-All
+
+    Write-Output ""
+    Write-Output "== E. F7 开始 / F8 停止 =="
+    Write-TestIni $iniPath @(@{ Enabled = 1; Key = "F24"; Interval = 0.05; Max = 0 })
+    $proc = Start-NineFlow
+    $window = Get-MainWindow
+    Check "E 主窗口出现" ($window -ne $null)
+    $hwnd = if ($window) { [IntPtr]$window.Current.NativeWindowHandle } else { [IntPtr]::Zero }
+    $catcher = Start-KeyCatcher (Join-Path $WorkDir "target-e.log")
+    Check "E 目标窗口就绪" ($catcher.Ready)
+    Check "E 目标窗口已激活" (Activate-Target $catcher)
+    if ($hwnd -ne [IntPtr]::Zero) { $window = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd) }
+    Check "E 后台窗口句柄有效" ($window -ne $null)
+
+    if ($window) {
+        [E2E]::Tap(0x76)
+        Start-Sleep -Milliseconds 300
+        [E2E]::Tap(0x76)
+        Start-Sleep -Milliseconds 800
+        [E2E]::Tap(0x77)
+        $saved = Wait-Until { [int](Read-IniValue $iniPath "Slot1" "Done") -gt 0 } 6
+        $captured = if (Test-Path $catcher.LogPath) { Get-Content $catcher.LogPath -Raw } else { "" }
+        $sentCount = ([regex]::Matches($captured, "vk=135;")).Count
+        Check "F7 开始运行" ($sentCount -gt 0) "实际发送 F24 $sentCount 次"
+        Check "F8 停止运行" ($saved -and $sentCount -gt 0) "实际进度: $(Read-IniValue $iniPath 'Slot1' 'Done')"
+        Start-Sleep -Milliseconds 500
+        $capturedAfter = if (Test-Path $catcher.LogPath) { Get-Content $catcher.LogPath -Raw } else { "" }
+        $afterCount = ([regex]::Matches($capturedAfter, "vk=135;")).Count
+        Check "停止后不再发送" ($afterCount -eq $sentCount) "停止前 $sentCount 次，停止后 $afterCount 次"
+        Check "停止后进度已保存" $saved
+    }
+    Stop-All
+
+    Write-Output ""
+    Write-Output "== F. 关闭窗口时保存进度并退出 =="
+    Write-TestIni $iniPath @(@{ Enabled = 1; Key = "F24"; Interval = 0.02; Max = 0 }) -closeToTray 0
+    $proc = Start-NineFlow
+    $window = Get-MainWindow
+    Check "F 主窗口出现" ($window -ne $null)
+    $hwnd = if ($window) { [IntPtr]$window.Current.NativeWindowHandle } else { [IntPtr]::Zero }
+    $catcher = Start-KeyCatcher (Join-Path $WorkDir "target-f.log")
+    Check "F 目标窗口就绪" ($catcher.Ready)
+    Check "F 目标窗口已激活" (Activate-Target $catcher)
+    if ($hwnd -ne [IntPtr]::Zero) { $window = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd) }
+    Check "F 后台窗口句柄有效" ($window -ne $null)
+
+    if ($window) {
+        [E2E]::Tap(0x76)
+        Start-Sleep -Milliseconds 300
+        [E2E]::Tap(0x76)
+        Start-Sleep -Milliseconds 900
+        $window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
+        $exited = Wait-Until { $proc.HasExited } 6
+        Check "关闭后进程退出" $exited
+        Check "退出前保存了进度" ([int](Read-IniValue $iniPath "Slot1" "Done") -gt 0)
+    }
+    Stop-All
+
+    Write-Output ""
+    Write-Output "== G. F9 重置进度 =="
+    Write-TestIni $iniPath @(@{ Enabled = 1; Key = "F24"; Interval = 0.01; Max = 1 })
+    $proc = Start-NineFlow
+    $window = Get-MainWindow
+    Check "G 主窗口出现" ($window -ne $null)
+    $hwnd = if ($window) { [IntPtr]$window.Current.NativeWindowHandle } else { [IntPtr]::Zero }
+    $catcher = Start-KeyCatcher (Join-Path $WorkDir "target-g.log")
+    Check "G 目标窗口就绪" ($catcher.Ready)
+    Check "G 目标窗口已激活" (Activate-Target $catcher)
+    if ($hwnd -ne [IntPtr]::Zero) { $window = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd) }
+    Check "G 后台窗口句柄有效" ($window -ne $null)
+
+    if ($window) {
+        $started = Start-WithHotkey $iniPath
+        Check "G 本轮完成" ($started -and ((Read-IniValue $iniPath "Slot1" "Done") -eq "1")) "实际进度: $(Read-IniValue $iniPath 'Slot1' 'Done')"
+        Check "G 完成前进度为 1" ((Read-IniValue $iniPath "Slot1" "Done") -eq "1")
+        [E2E]::Tap(0x78)
+        $reset = Wait-Until { (Read-IniValue $iniPath "Slot1" "Done") -eq "0" } 5
+        Check "F9 重置进度" $reset "实际进度: $(Read-IniValue $iniPath 'Slot1' 'Done')"
+        Check "G 重置后进度为 0" ((Read-IniValue $iniPath "Slot1" "Done") -eq "0")
+    }
+    Stop-All
+
+    Write-Output ""
+    Write-Output "== H. 添加与删除行 =="
+    Write-TestIni $iniPath @(@{ Enabled = 1; Key = "F24"; Interval = 0.01; Max = 1 }, @{ Enabled = 0; Key = ""; Interval = 1.5; Max = 0 })
+    $proc = Start-NineFlow
+    $window = Get-MainWindow
+    Check "H 主窗口出现" ($window -ne $null)
+    if ($window) {
+        Invoke-Button $window "button.addSlot"
+        $added = Wait-Until { Find-ById $window "slot3.enabled" } 4
+        Check "添加一行后出现第三行" $added
+        Check "第三行删除按钮存在" ((Find-ById $window "slot3.delete") -ne $null)
+        Invoke-Button $window "slot3.delete"
+        $removed = Wait-Until { -not (Find-ById $window "slot3.enabled") } 4
+        Check "删除第三行后控件消失" $removed
+    }
 }
-
-Get-Process -Name KeyCatcher -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Stop-All
-
-# ------------------------------------------------------------------ C. 托盘常驻 + 后台热键
-Write-Output ""
-Write-Output "== C. 关闭窗口后仍在后台运行，热键继续可用 =="
-Write-TestIni $iniPath @(@{ Enabled = 1; Key = "F24"; Interval = 0.01; Max = 2 })
-$proc = Start-Process -FilePath $ExePath -PassThru
-$window = Get-MainWindow
-Check "C 窗口出现" ($window -ne $null)
-
-if ($window) {
-    $window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
-    Start-Sleep -Milliseconds 1200
-
-    $proc.Refresh()
-    Check "点关闭后进程没有退出" (-not $proc.HasExited)
-    $stillVisible = Get-MainWindow -timeoutSeconds 2
-    Check "窗口已隐藏到托盘" ($stillVisible -eq $null)
-
-    # 窗口隐藏状态下按 F7，应该照常执行
-    [E2E]::Tap(0x76)   # F7
-    Start-Sleep -Milliseconds 1500
-    $done = Read-IniValue $iniPath "Slot1" "Done"
-    Check "隐藏到托盘后 F7 仍能连点（进度已保存）" ([int]$done -eq 2) "实际: $done"
-
-    # 再启动一个实例：应该把已有窗口唤出来
-    $second = Start-Process -FilePath $ExePath -PassThru
-    $restored = Get-MainWindow -timeoutSeconds 8
-    Check "再次双击图标能唤出已隐藏的窗口" ($restored -ne $null)
-    Start-Sleep -Milliseconds 1500
-    $second.Refresh()
-    Check "第二个实例自动退出" ($second.HasExited)
-    Check "原实例仍在运行" (-not $proc.HasExited)
+finally {
+    Stop-All
+    Remove-Item $iniPath -ErrorAction SilentlyContinue
 }
-Stop-All
-
-# ------------------------------------------------------------------ D. 窗口置顶开关
-Write-Output ""
-Write-Output "== D. 窗口置顶开关 =="
-Write-TestIni $iniPath @(@{ Enabled = 1; Key = "F24"; Interval = 0.01; Max = 1 })
-$proc = Start-Process -FilePath $ExePath -PassThru
-$window = Get-MainWindow
-Check "D 窗口出现" ($window -ne $null)
-
-if ($window) {
-    $hwnd = [IntPtr]$window.Current.NativeWindowHandle
-    Check "默认不置顶" (-not [E2E]::IsTopMost($hwnd))
-
-    Open-SwitchMenu $window "switch.topMost"
-    Invoke-Button $window "switch.topMost"
-    Start-Sleep -Milliseconds 600
-    Check "打开置顶后窗口为置顶状态" ([E2E]::IsTopMost($hwnd))
-
-    Open-SwitchMenu $window "switch.topMost"
-    Invoke-Button $window "switch.topMost"
-    Start-Sleep -Milliseconds 600
-    Check "关闭置顶后恢复普通状态" (-not [E2E]::IsTopMost($hwnd))
-}
-Stop-All
-
-# ------------------------------------------------------------------ E. 热键 F7/F8
-Write-Output ""
-Write-Output "== E. F7 开始 / F8 停止 =="
-Write-TestIni $iniPath @(@{ Enabled = 1; Key = "F24"; Interval = 0.05; Max = 0 })
-$proc = Start-Process -FilePath $ExePath -PassThru
-$window = Get-MainWindow
-Check "E 窗口出现" ($window -ne $null)
-
-if ($window) {
-    [E2E]::Tap(0x76)   # F7
-    $status = Wait-Status $window "运行中"
-    Check "F7 开始运行" ($status -like "*运行中*") "实际: $status"
-
-    Start-Sleep -Milliseconds 800
-    [E2E]::Tap(0x77)   # F8
-    $status = Wait-Status $window "已停止"
-    Check "F8 停止运行" ($status -like "*已停止*") "实际: $status"
-    Check "停止后进度已保存" ([int](Read-IniValue $iniPath "Slot1" "Done") -gt 0)
-}
-Stop-All
-
-# ------------------------------------------------------------------ F. 关闭保存进度（关闭到托盘=关闭）
-Write-Output ""
-Write-Output "== F. 关闭到托盘开关关闭时，关闭窗口会保存进度并退出 =="
-Write-TestIni $iniPath @(@{ Enabled = 1; Key = "F24"; Interval = 0.02; Max = 0 }) -closeToTray 0
-$proc = Start-Process -FilePath $ExePath -PassThru
-$window = Get-MainWindow
-Check "F 窗口出现" ($window -ne $null)
-
-if ($window) {
-    Invoke-Button $window "button.start"
-    Start-Sleep -Milliseconds 900
-    $window.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
-    Start-Sleep -Milliseconds 1500
-
-    $proc.Refresh()
-    Check "关闭后进程退出" ($proc.HasExited)
-    Check "退出前保存了进度" ([int](Read-IniValue $iniPath "Slot1" "Done") -gt 0)
-}
-Stop-All
-Remove-Item $iniPath -ErrorAction SilentlyContinue
 
 Write-Output ""
 Write-Output "结果：通过 $script:pass 项，失败 $script:fail 项"
